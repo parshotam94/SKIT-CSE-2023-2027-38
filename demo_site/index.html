@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>WAF Security Testing Console</title>
+
+</head>
+
+
+<body>
+
+
+<header>
+
+<div class="navbar">
+
+<div class="brand">
+
+<div class="logo">🛡</div>
+
+<div>
+<h1>WAF Security Console</h1>
+<span>Web Application Firewall Testing Environment</span>
+</div>
+
+</div>
+
+
+<div class="status">
+
+<div class="status-dot"></div>
+
+WAF Environment Online
+
+</div>
+
+</div>
+
+</header>
+
+
+<main class="container">
+
+
+<section class="hero">
+
+<h2>Application Security Testing Console</h2>
+
+<p>
+Generate legitimate and attack-style HTTP requests to evaluate
+your Web Application Firewall, Transformer model, anomaly detector,
+and request classification pipeline.
+</p>
+
+</section>
+
+
+<!-- STATISTICS -->
+
+<section class="stats">
+
+<div class="stat">
+
+<div class="stat-label">
+TOTAL REQUESTS
+</div>
+
+<div
+id="totalRequests"
+class="stat-value blue">
+0
+</div>
+
+</div>
+
+
+<div class="stat">
+
+<div class="stat-label">
+NORMAL REQUESTS
+</div>
+
+<div
+id="normalRequests"
+class="stat-value green">
+0
+</div>
+
+</div>
+
+
+<div class="stat">
+
+<div class="stat-label">
+ATTACK TESTS
+</div>
+
+<div
+id="attackRequests"
+class="stat-value red">
+0
+</div>
+
+</div>
+
+
+<div class="stat">
+
+<div class="stat-label">
+SUCCESS RATE
+</div>
+
+<div
+id="successRate"
+class="stat-value">
+100%
+</div>
+
+</div>
+
+</section>
+
+
+<div class="grid">
+
+
+<!-- LEFT COLUMN -->
+
+<div>
+
+
+<!-- NORMAL REQUESTS -->
+
+<div class="card">
+
+<div class="card-header">
+
+<h3>Normal Traffic</h3>
+
+<span class="badge">
+BENIGN
+</span>
+
+</div>
+
+
+<div class="test-buttons">
+
+<button
+class="success"
+onclick="sendGet('/api/events','Normal Events Request')">
+
+📅 Load Events
+
+</button>
+
+
+<button
+class="success"
+onclick="sendGet('/api/profile','Normal Profile Request')">
+
+👤 Load Profile
+
+</button>
+
+
+<button
+class="success"
+onclick="sendGet('/api/search?q=machine-learning','Normal Search')">
+
+🔎 Search
+
+</button>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<!-- ATTACK TESTS -->
+
+<div class="card">
+
+<div class="card-header">
+
+<h3>Attack Simulation</h3>
+
+<span class="badge"
+style="color:var(--red)">
+SECURITY TEST
+</span>
+
+</div>
+
+
+<div class="attack-grid">
+
+
+<div class="attack">
+
+<div class="attack-icon">💉</div>
+
+<h4>SQL Injection</h4>
+
+<p>
+Simulates malicious authentication input.
+</p>
+
+<button
+class="danger"
+onclick="sqlInjection()">
+
+Run Test
+
+</button>
+
+</div>
+
+
+<div class="attack">
+
+<div class="attack-icon">⚡</div>
+
+<h4>XSS</h4>
+
+<p>
+Tests script injection through query parameters.
+</p>
+
+<button
+class="danger"
+onclick="xssTest()">
+
+Run Test
+
+</button>
+
+</div>
+
+
+<div class="attack">
+
+<div class="attack-icon">📁</div>
+
+<h4>Path Traversal</h4>
+
+<p>
+Tests malicious filesystem path input.
+</p>
+
+<button
+class="danger"
+onclick="traversalTest()">
+
+Run Test
+
+</button>
+
+</div>
+
+
+<div class="attack">
+
+<div class="attack-icon">💻</div>
+
+<h4>Command Injection</h4>
+
+<p>
+Tests shell-command style payloads.
+</p>
+
+<button
+class="danger"
+onclick="commandTest()">
+
+Run Test
+
+</button>
+
+</div>
+
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<!-- LOGIN TEST -->
+
+<div class="card">
+
+<div class="card-header">
+
+<h3>Authentication Test</h3>
+
+<span class="badge">
+API
+</span>
+
+</div>
+
+
+<div class="form-group">
+
+<label>Username</label>
+
+<input
+id="username"
+value="user">
+
+</div>
+
+
+<div class="form-group">
+
+<label>Password</label>
+
+<input
+id="password"
+type="password"
+value="password">
+
+</div>
+
+
+<button
+class="primary"
+onclick="normalLogin()">
+
+🔐 Authenticate
+
+</button>
+
+
+<button
+class="danger"
+onclick="attackLogin()">
+
+🚨 SQLi Login
+
+</button>
+
+</div>
+
+
+<br>
+
+
+<!-- CUSTOM REQUEST -->
+
+<div class="card">
+
+<div class="card-header">
+
+<h3>Custom Request Tester</h3>
+
+<span class="badge">
+ADVANCED
+</span>
+
+</div>
+
+
+<div class="form-group">
+
+<label>HTTP Method</label>
+
+<select id="method">
+
+<option>GET</option>
+<option>POST</option>
+
+</select>
+
+</div>
+
+
+<div class="form-group">
+
+<label>Payload</label>
+
+<textarea
+id="payload"
+placeholder="Enter request payload..."></textarea>
+
+</div>
+
+
+<button
+class="primary"
+onclick="customRequest()">
+
+Send Custom Request
+
+</button>
+
+</div>
+
+</div>
+
+
+<!-- RIGHT COLUMN -->
+
+<div>
+
+
+<!-- LIVE LOG -->
+
+<div class="card">
+
+<div class="card-header">
+
+<h3>Live Request Monitor</h3>
+
+<button
+class="danger"
+onclick="clearLog()">
+
+Clear
+
+</button>
+
+</div>
+
+
+<div
+id="log"
+class="log">
+
+<div class="log-line log-info">
+
+System initialized...
+
+</div>
+
+</div>
+
+</div>
+
+
+<br>
+
+
+<!-- RESPONSE -->
+
+<div class="card">
+
+<div class="card-header">
+
+<h3>Last Response</h3>
+
+<span
+id="responseStatus"
+class="badge">
+
+WAITING
+
+</span>
+
+</div>
+
+
+<div
+id="response"
+class="response">
+
+No request has been executed yet.
+
+</div>
+
+</div>
+
+
+</div>
+
+</div>
+
+
+</main>
+
+
+<footer>
+
+WAF Security Testing Environment • FastAPI Backend •
+Transformer / ML Pipeline Ready
+
+</footer>
+
+
+<script>
+
+
+let totalRequests = 0;
+
+let normalRequests = 0;
+
+let attackRequests = 0;
+
+let successfulRequests = 0;
+
+
+const logEl =
+document.getElementById("log");
+
+
+function timestamp() {
+
+return new Date()
+.toLocaleTimeString();
+
+}
+
+
+function updateStats() {
+
+document.getElementById(
+"totalRequests"
+).textContent = totalRequests;
+
+
+document.getElementById(
+"normalRequests"
+).textContent = normalRequests;
+
+
+document.getElementById(
+"attackRequests"
+).textContent = attackRequests;
+
+
+let rate =
+totalRequests === 0
+? 100
+: Math.round(
+(successfulRequests / totalRequests) * 100
+);
+
+
+document.getElementById(
+"successRate"
+).textContent = rate + "%";
+
+}
+
+
+function writeLog(
+message,
+type="info"
+) {
+
+const line =
+document.createElement("div");
+
+line.className =
+"log-line log-" + type;
+
+
+line.innerHTML = `
+<span class="log-time">
+[${timestamp()}]
+</span>
+${message}
+`;
+
+
+logEl.prepend(line);
+
+}
+
+
+function showResponse(
+status,
+data
+) {
+
+document.getElementById(
+"responseStatus"
+).textContent =
+status;
+
+
+document.getElementById(
+"response"
+).textContent =
+JSON.stringify(
+data,
+null,
+2
+);
+
+}
+
+
+async function sendGet(
+path,
+description,
+isAttack=false
+) {
+
+totalRequests++;
+
+if(isAttack)
+attackRequests++;
+else
+normalRequests++;
+
+
+writeLog(
+`GET ${path}`,
+isAttack ? "danger" : "info"
+);
+
+
+try {
+
+const response =
+await fetch(path);
+
+
+const data =
+await response.json();
+
+
+if(response.ok)
+successfulRequests++;
+
+
+showResponse(
+response.status,
+data
+);
+
+
+writeLog(
+`Response ${response.status} — ${description}`,
+response.ok
+? "success"
+: "danger"
+);
+
+}
+
+catch(error) {
+
+writeLog(
+`Request failed: ${error.message}`,
+"danger"
+);
+
+}
+
+
+updateStats();
+
+}
+
+
+async function sendPost(
+path,
+body,
+description,
+isAttack=false
+) {
+
+totalRequests++;
+
+if(isAttack)
+attackRequests++;
+else
+normalRequests++;
+
+
+writeLog(
+`POST ${path}`,
+isAttack ? "danger" : "info"
+);
+
+
+try {
+
+const response =
+await fetch(
+path,
+{
+method:"POST",
+
+headers:{
+"Content-Type":
+"application/json"
+},
+
+body:
+JSON.stringify(body)
+
+});
+
+
+const data =
+await response.json();
+
+
+if(response.ok)
+successfulRequests++;
+
+
+showResponse(
+response.status,
+data
+);
+
+
+writeLog(
+`Response ${response.status} — ${description}`,
+response.ok
+? "success"
+: "danger"
+);
+
+}
+
+catch(error) {
+
+writeLog(
+`Request failed: ${error.message}`,
+"danger"
+);
+
+}
+
+
+updateStats();
+
+}
+
+
+/* ---------------- NORMAL LOGIN ---------------- */
+
+function normalLogin() {
+
+sendPost(
+"/api/auth/login",
+
+{
+username:
+document.getElementById(
+"username"
+).value,
+
+password:
+document.getElementById(
+"password"
+).value
+},
+
+"Normal authentication"
+);
+
+}
+
+
+/* ---------------- SQL INJECTION ---------------- */
+
+function attackLogin() {
+
+sendPost(
+
+"/api/auth/login",
+
+{
+username:
+"admin' OR '1'='1",
+
+password:
+"password"
+},
+
+"SQL Injection login attempt",
+
+true
+
+);
+
+}
+
+
+/* ---------------- XSS ---------------- */
+
+function xssTest() {
+
+sendGet(
+
+"/api/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+
+"XSS payload",
+
+true
+
+);
+
+}
+
+
+/* ---------------- PATH TRAVERSAL ---------------- */
+
+function traversalTest() {
+
+sendGet(
+
+"/api/files?path=../../etc/passwd",
+
+"Path traversal payload",
+
+true
+
+);
+
+}
+
+
+/* ---------------- COMMAND INJECTION ---------------- */
+
+function commandTest() {
+
+sendPost(
+
+"/api/exec",
+
+{
+cmd:
+"ls; cat /etc/passwd"
+},
+
+"Command injection payload",
+
+true
+
+);
+
+}
+
+
+/* ---------------- NORMAL APIs ---------------- */
+
+function loadEvents() {
+
+sendGet(
+"/api/events",
+"Events loaded"
+);
+
+}
+
+
+function customRequest() {
+
+const method =
+document.getElementById(
+"method"
+).value;
+
+
+const payload =
+document.getElementById(
+"payload"
+).value;
+
+
+if(method === "GET") {
+
+sendGet(
+"/api/search?q=" +
+encodeURIComponent(payload),
+"Custom GET request"
+);
+
+}
+
+else {
+
+sendPost(
+"/api/test",
+
+{
+method: "POST",
+payload: payload
+},
+
+"Custom POST request"
+);
+
+}
+
+}
+
+
+/* ---------------- CLEAR LOG ---------------- */
+
+function clearLog() {
+
+logEl.innerHTML = "";
+
+writeLog(
+"Request monitor cleared",
+"info"
+);
+
+}
+
+
+updateStats();
+
+</script>
+
+
+</body>
+
+</html>
