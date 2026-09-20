@@ -204,3 +204,208 @@ class BatchIngester:
             Requests with scan results
         """
         results = []
+
+        # Process in batches
+        for i in range(0, len(requests), self.batch_size):
+            batch = requests[i:i + self.batch_size]
+
+            try:
+                # Prepare batch scan request
+                scan_batch = []
+                for req in batch:
+                    scan_batch.append({
+                        "method": req.get("method", "GET"),
+                        "path": req.get("path", "/"),
+                        "query_string": req.get("query_string", ""),
+                        "headers": {},
+                        "body": ""
+                    })
+
+                # Send batch scan request
+                async with session.post(
+                    f"{self.scan_api}/batch-scan",
+                    json={"requests": scan_batch},
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        scan_results = await response.json()
+
+                        # Merge scan results with original requests
+                        for req, scan_result in zip(batch, scan_results.get("results", [])):
+                            req["anomaly_score"] = scan_result.get("anomaly_score", 0.0)
+                            req["is_anomalous"] = scan_result.get("is_anomalous", False)
+                            req["reconstruction_error"] = scan_result.get("reconstruction_error", 0.0)
+                            req["perplexity"] = scan_result.get("perplexity", 0.0)
+
+                            if req["is_anomalous"]:
+                                self.stats.anomalous_requests += 1
+
+                            results.append(req)
+                    else:
+                        self.logger.error(
+                            f"API scan failed with status {response.status}",
+                            batch_size=len(batch)
+                        )
+                        results.extend(batch)
+
+            except asyncio.TimeoutError:
+                self.logger.error("API scan timeout", batch_size=len(batch))
+                results.extend(batch)
+            except Exception as e:
+                self.logger.error(f"API scan error: {e}", batch_size=len(batch))
+                results.extend(batch)
+
+        return results
+
+    async def process_and_scan(
+        self,
+        log_files: List[Path],
+        output_file: Optional[str] = None,
+        output_format: str = "jsonl"
+    ):
+        """
+        Process log files and optionally scan via API.
+
+        Args:
+            log_files: List of log files to process
+            output_file: Output file path
+            output_format: Output format (jsonl, csv, txt)
+        """
+        self.logger.info(
+            f"Starting batch processing",
+            num_files=len(log_files),
+            output_format=output_format
+        )
+
+        all_results = []
+
+        # Process files in parallel
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {
+                executor.submit(self.process_file, log_file): log_file
+                for log_file in log_files
+            }
+
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Processing files"
+            ):
+                try:
+                    results = future.result()
+                    all_results.extend(results)
+                except Exception as e:
+                    log_file = futures[future]
+                    self.logger.error(f"Worker failed for {log_file}: {e}")
+
+        # Scan via API if configured
+        if self.scan_api and all_results:
+            self.logger.info(
+                f"Scanning {len(all_results)} requests via API",
+                api_endpoint=self.scan_api
+            )
+
+            async with aiohttp.ClientSession() as session:
+                all_results = await self.scan_requests(all_results, session)
+
+        # Write output
+        if output_file:
+            self._write_output(all_results, output_file, output_format)
+
+        return all_results
+
+    def _write_output(
+        self,
+        results: List[Dict[str, Any]],
+        output_file: str,
+        output_format: str
+    ):
+        """
+        Write results to output file.
+
+        Args:
+            results: Processed requests
+            output_file: Output file path
+            output_format: Output format
+        """
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if output_format == "jsonl":
+            with open(output_file, 'w', encoding='utf-8') as f:
+                for result in results:
+                    f.write(json.dumps(result) + "\n")
+
+        elif output_format == "csv":
+            if not results:
+                return
+
+            with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                # Get all unique keys
+                fieldnames = set()
+                for result in results:
+                    fieldnames.update(result.keys())
+                fieldnames = sorted(list(fieldnames))
+
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(results)
+
+        elif output_format == "txt":
+            with open(output_file, 'w', encoding='utf-8') as f:
+                for result in results:
+                    f.write(result.get("normalized_text", str(result)) + "\n")
+
+        else:
+            raise ValueError(f"Unsupported output format: {output_format}")
+
+        self.logger.info(
+            f"Wrote {len(results)} requests to {output_file}",
+            format=output_format
+        )
+
+    def print_summary(self):
+        """Print processing summary"""
+        print("\n" + "=" * 70)
+        print("BATCH INGESTION SUMMARY")
+        print("=" * 70)
+        print(f"Files Processed:       {self.stats.processed_files}/{self.stats.total_files}")
+        print(f"Failed Files:          {self.stats.failed_files}")
+        print(f"Total Requests:        {self.stats.total_requests}")
+        print(f"Successful Requests:   {self.stats.successful_requests}")
+        print(f"Failed Requests:       {self.stats.failed_requests}")
+
+        if self.scan_api:
+            print(f"Anomalous Requests:    {self.stats.anomalous_requests}")
+            print(f"Anomaly Rate:          {self.stats.anomalous_requests / max(self.stats.successful_requests, 1) * 100:.2f}%")
+
+        print(f"Elapsed Time:          {self.stats.elapsed_time():.2f}s")
+        print(f"Throughput:            {self.stats.requests_per_second():.2f} req/s")
+        print(f"Success Rate:          {self.stats.successful_requests / max(self.stats.total_requests, 1) * 100:.2f}%")
+        print("=" * 70)
+
+
+async def async_main(
+    log_dir: str,
+    output_file: Optional[str] = None,
+    normalize: bool = True,
+    scan_api: Optional[str] = None,
+    max_files: Optional[int] = None,
+    max_workers: int = 4,
+    batch_size: int = 100,
+    output_format: str = "jsonl"
+):
+    """
+    Main async function for batch ingestion.
+
+    Args:
+        log_dir: Directory containing log files
+        output_file: Output file path
+        normalize: Apply normalization
+        scan_api: WAF API endpoint for scanning
+        max_files: Maximum number of files to process
+        max_workers: Number of parallel workers
+        batch_size: Batch size for API scanning
+        output_format: Output format (jsonl, csv, txt)
+    """
+   
