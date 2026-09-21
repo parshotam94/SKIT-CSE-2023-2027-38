@@ -408,4 +408,141 @@ async def async_main(
         batch_size: Batch size for API scanning
         output_format: Output format (jsonl, csv, txt)
     """
-   
+    # Find log files
+    log_path = Path(log_dir)
+    if not log_path.exists():
+        raise ValueError(f"Log directory does not exist: {log_dir}")
+
+    log_files = sorted(log_path.rglob("*.log"))
+
+    if not log_files:
+        print(f"No log files found in {log_dir}")
+        return
+
+    if max_files:
+        log_files = log_files[:max_files]
+
+    # Initialize ingester
+    ingester = BatchIngester(
+        normalize=normalize,
+        scan_api=scan_api,
+        max_workers=max_workers,
+        batch_size=batch_size
+    )
+
+    ingester.stats.total_files = len(log_files)
+    ingester.stats.start_time = time.time()
+
+    # Process files
+    await ingester.process_and_scan(
+        log_files=log_files,
+        output_file=output_file,
+        output_format=output_format
+    )
+
+    ingester.stats.end_time = time.time()
+
+    # Print summary
+    ingester.print_summary()
+
+    # Log metrics
+    ingester.logger.log_metric(
+        "batch_ingestion_complete",
+        ingester.stats.successful_requests,
+        tags={
+            "log_dir": log_dir,
+            "output_format": output_format,
+            "scan_enabled": scan_api is not None
+        }
+    )
+
+
+def main():
+    """CLI entry point"""
+    parser = argparse.ArgumentParser(
+        description="Batch ingest access logs for training or analysis",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Process logs and save as JSONL
+  python batch_ingest.py --log-dir /var/log/nginx --output benign_requests.jsonl
+
+  # Process with API scanning
+  python batch_ingest.py --log-dir /var/log/apache2 --scan-api http://localhost:8000 --output results.jsonl
+
+  # Process to CSV format
+  python batch_ingest.py --log-dir ./logs --output data.csv --format csv
+
+  # Process without normalization
+  python batch_ingest.py --log-dir ./logs --no-normalize --output raw_requests.jsonl
+        """
+    )
+
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        required=True,
+        help="Directory containing access logs"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output file path"
+    )
+    parser.add_argument(
+        "--format",
+        type=str,
+        choices=["jsonl", "csv", "txt"],
+        default="jsonl",
+        help="Output format (default: jsonl)"
+    )
+    parser.add_argument(
+        "--no-normalize",
+        action="store_true",
+        help="Skip normalization"
+    )
+    parser.add_argument(
+        "--scan-api",
+        type=str,
+        default=None,
+        help="WAF API endpoint for real-time scanning (e.g., http://localhost:8000)"
+    )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=None,
+        help="Maximum number of files to process"
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=4,
+        help="Number of parallel workers (default: 4)"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=100,
+        help="Batch size for API scanning (default: 100)"
+    )
+
+    args = parser.parse_args()
+
+    # Run async ingestion
+    asyncio.run(
+        async_main(
+            log_dir=args.log_dir,
+            output_file=args.output,
+            normalize=not args.no_normalize,
+            scan_api=args.scan_api,
+            max_files=args.max_files,
+            max_workers=args.max_workers,
+            batch_size=args.batch_size,
+            output_format=args.format
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
