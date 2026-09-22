@@ -8,8 +8,424 @@
 
 <title>WAF Security Testing Console</title>
 
-</head>
 
+</head>
+<style>
+    :root {
+    --bg: #070b14;
+    --panel: #0d1422;
+    --panel2: #111a2b;
+    --border: rgba(148,163,184,.14);
+    --text: #e5edf8;
+    --muted: #7f8da3;
+    --blue: #38bdf8;
+    --cyan: #22d3ee;
+    --green: #34d399;
+    --red: #fb7185;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Inter, Arial, sans-serif;
+    background:
+        radial-gradient(circle at 10% 10%, rgba(56,189,248,.08), transparent 30%),
+        radial-gradient(circle at 90% 20%, rgba(167,139,250,.08), transparent 30%),
+        var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+}
+
+
+/* ---------------- HEADER ---------------- */
+
+header {
+    border-bottom: 1px solid var(--border);
+    background: rgba(7,11,20,.8);
+    backdrop-filter: blur(15px);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.navbar {
+    max-width: 1400px;
+    margin: auto;
+    padding: 18px 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg,#0ea5e9,#6366f1);
+    box-shadow: 0 0 25px rgba(56,189,248,.25);
+    font-size: 20px;
+}
+
+.brand h1 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.brand span {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--green);
+}
+
+.status-dot {
+    width: 9px;
+    height: 9px;
+    background: var(--green);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--green);
+}
+
+
+/* ---------------- MAIN ---------------- */
+
+.container {
+    max-width: 1400px;
+    margin: auto;
+    padding: 30px 25px;
+}
+
+.hero {
+    margin-bottom: 30px;
+}
+
+.hero h2 {
+    font-size: 34px;
+    margin: 0 0 10px;
+    background: linear-gradient(
+        90deg,
+        #fff,
+        #38bdf8,
+        #a78bfa
+    );
+    -webkit-background-clip: text;
+    color: transparent;
+}
+
+.hero p {
+    color: var(--muted);
+    max-width: 750px;
+}
+
+
+/* ---------------- STATS ---------------- */
+
+.stats {
+    display: grid;
+    grid-template-columns: repeat(4,1fr);
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.stat {
+    background: linear-gradient(
+        145deg,
+        rgba(17,26,43,.95),
+        rgba(9,14,25,.95)
+    );
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    transition: .25s;
+}
+
+.stat:hover {
+    transform: translateY(-3px);
+    border-color: rgba(56,189,248,.3);
+}
+
+.stat-label {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    margin-top: 8px;
+}
+
+.stat-value.green {
+    color: var(--green);
+}
+
+.stat-value.red {
+    color: var(--red);
+}
+
+.stat-value.blue {
+    color: var(--blue);
+}
+
+
+/* ---------------- GRID ---------------- */
+
+.grid {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 20px;
+}
+
+.card {
+    background: rgba(13,20,34,.82);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.2);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.card-header h3 {
+    margin: 0;
+}
+
+.badge {
+    padding: 5px 10px;
+    border-radius: 20px;
+    background: rgba(56,189,248,.1);
+    color: var(--blue);
+    font-size: 11px;
+}
+
+
+/* ---------------- ATTACK CARDS ---------------- */
+
+.attack-grid {
+    display: grid;
+    grid-template-columns: repeat(2,1fr);
+    gap: 12px;
+}
+
+.attack {
+    padding: 17px;
+    border-radius: 13px;
+    background: rgba(255,255,255,.025);
+    border: 1px solid var(--border);
+    transition: .25s;
+}
+
+.attack:hover {
+    transform: translateY(-3px);
+    border-color: rgba(251,113,133,.4);
+}
+
+.attack-icon {
+    font-size: 25px;
+}
+
+.attack h4 {
+    margin: 10px 0 5px;
+}
+
+.attack p {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+
+/* ---------------- BUTTONS ---------------- */
+
+button {
+    border: none;
+    cursor: pointer;
+    padding: 10px 14px;
+    border-radius: 9px;
+    font-weight: 600;
+    transition: .2s;
+}
+
+button:hover {
+    transform: translateY(-1px);
+}
+
+.primary {
+    background: linear-gradient(135deg,#0ea5e9,#6366f1);
+    color: white;
+}
+
+.danger {
+    background: rgba(251,113,133,.12);
+    color: var(--red);
+    border: 1px solid rgba(251,113,133,.2);
+}
+
+.success {
+    background: rgba(52,211,153,.12);
+    color: var(--green);
+    border: 1px solid rgba(52,211,153,.2);
+}
+
+
+/* ---------------- NORMAL TESTS ---------------- */
+
+.test-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+}
+
+
+/* ---------------- INPUTS ---------------- */
+
+input,
+textarea,
+select {
+    width: 100%;
+    background: #080e1a;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 11px;
+    outline: none;
+    margin-top: 6px;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    border-color: var(--blue);
+}
+
+textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+.form-group {
+    margin-bottom: 13px;
+}
+
+label {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+
+/* ---------------- LOG ---------------- */
+
+.log {
+    background: #050911;
+    border-radius: 12px;
+    padding: 14px;
+    height: 380px;
+    overflow-y: auto;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+}
+
+.log-line {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+}
+
+.log-time {
+    color: #64748b;
+}
+
+.log-success {
+    color: var(--green);
+}
+
+.log-danger {
+    color: var(--red);
+}
+
+.log-info {
+    color: var(--blue);
+}
+
+
+/* ---------------- RESPONSE ---------------- */
+
+.response {
+    margin-top: 15px;
+    background: #050911;
+    border-radius: 10px;
+    padding: 15px;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    min-height: 100px;
+    color: #cbd5e1;
+}
+
+
+/* ---------------- FOOTER ---------------- */
+
+footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 35px;
+}
+
+
+/* ---------------- RESPONSIVE ---------------- */
+
+@media(max-width:900px) {
+
+    .stats {
+        grid-template-columns: repeat(2,1fr);
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+}
+
+@media(max-width:600px) {
+
+    .stats {
+        grid-template-columns: 1fr;
+    }
+
+    .attack-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .hero h2 {
+        font-size: 27px;
+    }
+
+}
+</style>
 
 <body>
 
