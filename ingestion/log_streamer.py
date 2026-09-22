@@ -139,4 +139,108 @@ class LogStreamer:
             self.logger.error(f"Error parsing log data: {e}")
             return None
 
-    
+    async def stream_requests(self) -> AsyncGenerator[HTTPRequest, None]:
+        """
+        Stream parsed HTTP requests
+
+        Yields:
+            Parsed HTTPRequest objects
+        """
+        self._running = True
+        self.logger.info(f"Starting log stream from {self.log_file}")
+
+        try:
+            async for line in self.tail_file():
+                request = self.parse_log_line(line)
+                if request:
+                    yield request
+        finally:
+            self._running = False
+            self.logger.info("Log stream stopped")
+
+    def stop(self):
+        """Stop streaming"""
+        self._running = False
+
+
+class SimulatedLogStreamer(LogStreamer):
+    """
+    Simulated log streamer for testing and demo
+    Generates synthetic HTTP requests
+    """
+
+    BENIGN_PATTERNS = [
+        ("GET", "/api/users", "", "Mozilla/5.0"),
+        ("GET", "/api/products", "?category=electronics", "Chrome/120.0"),
+        ("POST", "/api/login", "", "Mozilla/5.0"),
+        ("GET", "/", "", "Safari/17.0"),
+        ("GET", "/static/css/main.css", "", "Chrome/120.0"),
+        ("GET", "/api/health", "", "curl/7.88.1"),
+    ]
+
+    ATTACK_PATTERNS = [
+        ("GET", "/api/users", "?id=1' OR '1'='1", "sqlmap/1.7"),  # SQL injection
+        ("GET", "/api/search", "?q=<script>alert(1)</script>", "Mozilla/5.0"),  # XSS
+        ("GET", "/../../../etc/passwd", "", "Nikto/2.5.0"),  # Path traversal
+        ("POST", "/api/admin", "", "python-requests/2.31.0"),  # Suspicious UA
+        ("GET", "/api/users", "?id=1 UNION SELECT * FROM passwords", "Mozilla/5.0"),
+    ]
+
+    def __init__(self, attack_rate: float = 0.1):
+        """
+        Initialize simulated streamer
+
+        Args:
+            attack_rate: Probability of generating attack (0.0-1.0)
+        """
+        self.attack_rate = attack_rate
+        self.logger = WAFLogger(__name__)
+        self._running = False
+        self.request_count = 0
+
+    async def stream_requests(self) -> AsyncGenerator[HTTPRequest, None]:
+        """
+        Generate simulated HTTP requests
+
+        Yields:
+            Simulated HTTPRequest objects
+        """
+        self._running = True
+        self.logger.info("Starting simulated log stream")
+
+        import random
+
+        try:
+            while self._running:
+                # Decide if attack or benign
+                is_attack = random.random() < self.attack_rate
+
+                if is_attack:
+                    method, path, query, ua = random.choice(self.ATTACK_PATTERNS)
+                else:
+                    method, path, query, ua = random.choice(self.BENIGN_PATTERNS)
+
+                # Generate request
+                request = HTTPRequest(
+                    timestamp=datetime.now().strftime("%d/%b/%Y:%H:%M:%S %z"),
+                    ip_address=f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}",
+                    method=method,
+                    path=path,
+                    query_string=query,
+                    http_version="HTTP/1.1",
+                    status_code=200 if not is_attack else random.choice([200, 403, 404]),
+                    response_size=random.randint(100, 5000),
+                    user_agent=ua,
+                    referer="-",
+                    raw_line=f"[SIMULATED] {method} {path}{query}"
+                )
+
+                self.request_count += 1
+                yield request
+
+                # Random delay between requests (0.5-2 seconds)
+                await asyncio.sleep(random.uniform(0.5, 2.0))
+
+        finally:
+            self._running = False
+            self.logger.info(f"Simulated stream stopped. Total requests: {self.request_count}")
