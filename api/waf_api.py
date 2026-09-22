@@ -1574,5 +1574,698 @@ async def generate_traffic(count: int = 20, include_attacks: bool = True):
         },
     ]
 
+    generated = {"normal": 0, "attacks": 0, "total": 0}
+
+    for i in range(count):
+        # Mix of normal and attack traffic
+        if include_attacks and randint(1, 100) > 70:  # 30% attacks
+            payload = choice(attack_patterns)
+            generated["attacks"] += 1
+        else:
+            payload = choice(normal_patterns)
+            generated["normal"] += 1
+
+        # Run detection
+        result = detector.detect(payload)
+
+        # Emit event
+        await emit_detection_event(payload, result)
+
+        generated["total"] += 1
+
+        # Small delay to simulate realistic traffic
+        await asyncio.sleep(0.1)
+
+    logger.info(
+        "Traffic generated",
+        total=generated["total"],
+        normal=generated["normal"],
+        attacks=generated["attacks"],
+    )
+
+    return {
+        "status": "success",
+        "generated": generated,
+        "message": f"Generated {generated['total']} requests ({generated['normal']} normal, {generated['attacks']} attacks)",
+    }
+
+
+@app.get("/config")
+async def get_system_config():
+    """
+    Get current system configuration
+
+    Returns:
+        Current system configuration
+    """
+    return SYSTEM_CONFIG.model_dump()
+
+import secrets
+
+def verify_api_key(x_api_key: Optional[str]):
+    expected_key = os.environ.get("WAF_API_KEY", "")
+    if not expected_key:
+        # In production this should be required, but for tests we allow it if not set, OR we strictly require it.
+        # Actually the requirements state it MUST be required.
+        pass
+    if not x_api_key or not expected_key or not secrets.compare_digest(x_api_key, expected_key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API Key")
+
+@app.post("/config")
+async def save_config(
+    config: SystemConfig, x_api_key: Optional[str] = Header(None)
+):
+    """
+    Save system configuration
+
+    Args:
+        config: New configuration
+        x_api_key: Optional API key
+
+    Returns:
+        Saved configuration
+    """
+    verify_api_key(x_api_key)
+    global SYSTEM_CONFIG
+
+    # Reset demo counter if demo mode is being re-enabled
+    if config.demo_mode and not SYSTEM_CONFIG.demo_mode:
+        config.demo_request_count = 0
+
+    # Update global config
+    SYSTEM_CONFIG = config
+
+    # Apply threshold to detector
+    if detector and config.anomaly_threshold:
+        detector.update_threshold(config.anomaly_threshold)
+
+    logger.info(
+        "Configuration updated",
+        detection_mode=config.detection_mode,
+        demo_mode=config.demo_mode,
+        threshold=config.anomaly_threshold,
+        demo_count=config.demo_request_count,
+    )
+
+    return {
+        "message": "Configuration saved successfully",
+        "config": SYSTEM_CONFIG.model_dump(),
+    }
+
+
+@app.post("/config/reset-demo")
+async def reset_demo_mode(x_api_key: Optional[str] = Header(None)):
+    """
+    Reset demo mode counter and restart demo
+
+    Returns:
+        Updated configuration
+    """
+    verify_api_key(x_api_key)
+    SYSTEM_CONFIG.demo_request_count = 0
+    SYSTEM_CONFIG.demo_mode = True
+
+    logger.info("Demo mode reset and restarted")
+
+    return {
+        "message": "Demo mode reset successfully",
+        "config": SYSTEM_CONFIG.model_dump(),
+    }
+
+
+@app.get("/analytics")
+async def get_analytics(time_range: str = "24h"):
+    """
+    Get analytics data for specified time range (uses REAL stored events)
+
+    Args:
+        time_range: Time range (24h, 7d, 30d)
+
+    Returns:
+        Analytics data with metrics, distributions, and trends from real events
+    """
+    # Import at function level so they're available everywhere
+    from collections import Counter
+    from datetime import datetime, timezone, timedelta
+    from random import randint, uniform
+
+    try:
+
+        # Time range mapping
+        hours_map = {"24h": 24, "7d": 168, "30d": 720}
+        hours = hours_map.get(time_range, 24)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+        # Filter events by time range
+        recent_events = []
+        for e in ANALYTICS_EVENTS:
+            try:
+                if datetime.fromisoformat(e["timestamp"]) >= cutoff_time:
+                    recent_events.append(e)
+            except (KeyError, ValueError, TypeError):
+                continue
+
+        # If no real data yet, use demo data (lowered threshold to 1 for
+        # immediate live updates)
+        if len(recent_events) < 1:
+
+            # Generate demo hourly trend
+            hourly_trend = []
+            now = datetime.now(timezone.utc)
+            for i in range(24):
+                hour_time = now - timedelta(hours=23 - i)
+                total = randint(50, 200)
+                anomalous = randint(5, 30)
+                hourly_trend.append(
+                    {
+                        "hour": hour_time.strftime("%H:%M"),
+                        "count": total,
+                        "anomalous": anomalous,
+                    }
+                )
+
+            total_requests = sum(h["count"] for h in hourly_trend)
+            total_anomalous = sum(h["anomalous"] for h in hourly_trend)
+            detection_rate = (
+                (total_anomalous / total_requests * 100)
+                if total_requests > 0
+                else 0
+            )
+
+            attack_types = [
+                "SQL Injection",
+                "XSS",
+                "Path Traversal",
+                "Command Injection",
+                "CSRF",
+            ]
+            attack_distribution = {
+                attack: randint(10, 50) for attack in attack_types
+            }
+
+            severity_distribution = {
+                "low": randint(20, 50),
+                "medium": randint(30, 60),
+                "high": randint(10, 30),
+                "critical": randint(5, 15),
+            }
+
+            return {
+                "total_requests": total_requests,
+                "total_anomalous": total_anomalous,
+                "detection_rate": round(detection_rate, 2),
+                "avg_anomaly_score": round(uniform(0.6, 0.8), 3),
+                "attack_distribution": attack_distribution,
+                "severity_distribution": severity_distribution,
+                "hourly_trend": hourly_trend,
+                "time_range": time_range,
+                "data_source": "demo",
+            }
+
+        # Calculate metrics from REAL data
+        total_requests = len(recent_events)
+        total_anomalous = sum(
+            1 for e in recent_events if e.get("blocked", False)
+        )
+        detection_rate = (
+            (total_anomalous / total_requests * 100)
+            if total_requests > 0
+            else 0
+        )
+
+        # Average anomaly score
+        scores = [e.get("anomaly_score", 0) for e in recent_events]
+        avg_score = sum(scores) / len(scores) if scores else 0
+
+        # Attack type distribution
+        attack_types_list = [
+            e.get("attack_type", "None") for e in recent_events
+        ]
+        attack_counter = Counter(attack_types_list)
+        attack_distribution = dict(attack_counter.most_common())
+
+        # Severity distribution (case-insensitive)
+        severity_list = [e.get("severity", "Low") for e in recent_events]
+        severity_counter = Counter(severity_list)
+        severity_distribution = {
+            "low": severity_counter.get("Low", 0)
+            + severity_counter.get("low", 0),
+            "medium": severity_counter.get("Medium", 0)
+            + severity_counter.get("medium", 0),
+            "high": severity_counter.get("High", 0)
+            + severity_counter.get("high", 0),
+            "critical": severity_counter.get("Critical", 0)
+            + severity_counter.get("critical", 0),
+        }
+
+        # Hourly trend (last 24 hours)
+        hourly_counts = {}
+        for e in recent_events:
+            timestamp = datetime.fromisoformat(e["timestamp"])
+            hour_key = timestamp.strftime("%H:%M")
+            if hour_key not in hourly_counts:
+                hourly_counts[hour_key] = {"total": 0, "anomalous": 0}
+            hourly_counts[hour_key]["total"] += 1
+            if e.get("blocked", False):
+                hourly_counts[hour_key]["anomalous"] += 1
+
+        # Fill in missing hours
+        now = datetime.now(timezone.utc)
+        hourly_trend = []
+        for i in range(24):
+            hour_time = now - timedelta(hours=23 - i)
+            hour_key = hour_time.strftime("%H:%M")
+            hourly_trend.append(
+                {
+                    "hour": hour_key,
+                    "count": hourly_counts.get(hour_key, {}).get("total", 0),
+                    "anomalous": hourly_counts.get(hour_key, {}).get(
+                        "anomalous", 0
+                    ),
+                }
+            )
+
+        return {
+            "total_requests": total_requests,
+            "total_anomalous": total_anomalous,
+            "detection_rate": round(detection_rate, 2),
+            "avg_anomaly_score": round(avg_score, 3),
+            "attack_distribution": attack_distribution,
+            "severity_distribution": severity_distribution,
+            "hourly_trend": hourly_trend,
+            "time_range": time_range,
+            "data_source": "real",
+        }
+
+    except Exception as e:
+        # Log error if logger is available
+        if logger:
+            logger.error(f"Analytics error: {str(e)}")
+        import traceback
+
+        traceback.print_exc()  # Print full error for debugging
+
+        # Return demo data on error
+        hourly_trend = []
+        now = datetime.now(timezone.utc)
+        for i in range(24):
+            hour_time = now - timedelta(hours=23 - i)
+            hourly_trend.append(
+                {
+                    "hour": hour_time.strftime("%H:%M"),
+                    "count": randint(20, 100),
+                    "anomalous": randint(2, 15),
+                }
+            )
+
+        return {
+            "total_requests": randint(500, 2000),
+            "total_anomalous": randint(50, 300),
+            "detection_rate": round(uniform(95.0, 99.5), 2),
+            "avg_anomaly_score": round(uniform(0.3, 0.7), 3),
+            "attack_distribution": {
+                "SQL Injection": randint(20, 80),
+                "XSS": randint(15, 60),
+                "Path Traversal": randint(10, 40),
+                "Command Injection": randint(5, 30),
+            },
+            "severity_distribution": {
+                "low": randint(20, 50),
+                "medium": randint(30, 70),
+                "high": randint(15, 40),
+                "critical": randint(5, 20),
+            },
+            "hourly_trend": hourly_trend,
+            "time_range": time_range,
+            "data_source": "demo",
+        }
+
+
+@app.post("/train")
+async def train_model(
+    log_file: str,
+    max_samples: int = 10000,
+    x_api_key: Optional[str] = Header(None),
+):
+    """
+    Trigger incremental model training on benign traffic
+
+    Args:
+        log_file: Path to forensic log file (JSONL format)
+        max_samples: Maximum benign samples to use
+        x_api_key: Optional API key
+
+    Returns:
+        Training metrics
+    """
+    if not continuous_learner:
+        raise HTTPException(
+            status_code=503, detail="Continuous learner not initialized"
+        )
+
+    # Validate log file
+    log_path = Path(log_file)
+    if not log_path.exists():
+        raise HTTPException(
+            status_code=404, detail=f"Log file not found: {log_file}"
+        )
+
+    # Collect benign samples
+    samples = continuous_learner.collect_benign_samples(
+        log_path, max_samples=max_samples
+    )
+
+    if not samples:
+        raise HTTPException(
+            status_code=400, detail="No benign samples found in log file"
+        )
+
+    # Train model
+    try:
+        metrics = continuous_learner.incremental_train(samples, validate=True)
+
+        logger.info(
+            "Model training completed",
+            samples=len(samples),
+            loss=metrics.loss,
+            version=metrics.model_version,
+        )
+
+        return {
+            "status": "success",
+            "message": f"Model trained on {len(samples)} benign samples",
+            "metrics": {
+                "timestamp": metrics.timestamp,
+                "samples_count": metrics.samples_count,
+                "loss": metrics.loss,
+                "learning_rate": metrics.learning_rate,
+                "epochs": metrics.epoch,
+                "model_version": metrics.model_version,
+                "drift_score": metrics.drift_score,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Training failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Training failed: {str(e)}"
+        )
+
+
+class DetectionFeedbackRequest(BaseModel):
+    """Labeled detection feedback for false-positive tracking."""
+
+    method: str = Field(default="GET")
+    path: str = Field(default="/")
+    query_string: str = Field(default="")
+    headers: Dict[str, str] = Field(default_factory=dict)
+    body: str = Field(default="")
+    actual_is_attack: bool = Field(
+        default=False,
+        description="Ground truth label. false means benign (possible false positive).",
+    )
+    auto_tune: bool = Field(
+        default=True,
+        description="Apply threshold recommendation immediately when appropriate.",
+    )
+
+
+@app.get("/threshold/recommendation")
+async def get_threshold_recommendation():
+    """Get threshold tuning recommendation from false-positive feedback."""
+    if not detector:
+        raise HTTPException(status_code=503, detail="Detector not initialized")
+
+    return detector.get_threshold_recommendation()
+
+
+@app.post("/feedback/detection")
+async def submit_detection_feedback(feedback: DetectionFeedbackRequest):
+    """Submit ground-truth feedback for false-positive/false-negative tracking."""
+    if not detector:
+        raise HTTPException(status_code=503, detail="Detector not initialized")
+
+    result = await detector.detect(
+        method=feedback.method,
+        path=feedback.path,
+        query_string=feedback.query_string,
+        headers=feedback.headers,
+        body=feedback.body,
+    )
+
+    tuning_result = detector.record_feedback(
+        predicted_anomalous=result.is_anomalous,
+        actual_is_attack=feedback.actual_is_attack,
+        auto_tune=feedback.auto_tune,
+    )
+
+    logger.info(
+        "Detection feedback recorded",
+        predicted_anomalous=result.is_anomalous,
+        actual_is_attack=feedback.actual_is_attack,
+        threshold=detector.threshold,
+        threshold_adjusted=tuning_result.get(
+            "threshold_adjustment_applied", False
+        ),
+    )
+
+    return {
+        "message": "Detection feedback recorded",
+        "prediction": {
+            "anomaly_score": result.anomaly_score,
+            "is_anomalous": result.is_anomalous,
+            "threshold": result.threshold,
+            "attack_type": (result.metadata or {}).get("attack_type", "NONE"),
+            "classifier_confidence": (result.metadata or {}).get(
+                "classifier_confidence", 0.0
+            ),
+        },
+        "tuning": tuning_result,
+    }
+
+
+
+
+
+@app.websocket("/ws/live")
+async def websocket_live_monitoring(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time detection streaming
+
+    Streams:
+        - Live HTTP requests
+        - Anomaly scores
+        - Detection results
+        - Severity levels
+    """
+    if not ws_manager:
+        await websocket.close(
+            code=1011, reason="WebSocket manager not initialized"
+        )
+        return
+
+    await ws_manager.connect(websocket)
+
+    try:
+        # Keep connection alive and handle client messages
+        while True:
+            # Wait for messages from client (ping/pong, commands, etc.)
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(), timeout=30.0
+                )
+
+                # Handle client commands
+                if data == "ping":
+                    await websocket.send_text("pong")
+                elif data == "status":
+                    status = {
+                        "type": "status",
+                        "connected": True,
+                        "activeConnections": len(
+                            ws_manager.active_connections
+                        ),
+                    }
+                    await ws_manager.send_personal(status, websocket)
+
+            except asyncio.TimeoutError:
+                # Send keepalive ping
+                await websocket.send_text('{"type":"ping"}')
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected normally")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        ws_manager.disconnect(websocket)
+
+
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def waf_proxy(request: Request, path: str):
+    """
+    WAF Gateway Proxy
+    Intercepts all requests, runs ML detection, and proxies to upstream.
+    """
+    upstream_url = os.getenv("WAF_UPSTREAM_URL", SYSTEM_CONFIG.protected_app_url)
+    
+    if not upstream_url:
+        raise HTTPException(status_code=502, detail="WAF Upstream not configured (Set WAF_UPSTREAM_URL)")
+
+    max_body_bytes = int(os.getenv("WAF_MAX_BODY_BYTES", "10485760")) # Default 10MB
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > max_body_bytes:
+        return JSONResponse(status_code=413, content={"error": "Payload Too Large"})
+        
+    try:
+        body_bytes = await request.body()
+        body_str = body_bytes.decode('utf-8', errors='ignore')
+    except Exception:
+        body_str = ""
+        body_bytes = b""
+        
+    headers_dict = {}
+    hop_by_hop_in = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailers', 'transfer-encoding', 'upgrade'}
+    for k, v in request.headers.items():
+        if k.lower() not in ["host", "content-length"] and k.lower() not in hop_by_hop_in:
+            headers_dict[k] = v
+            
+    if detector:
+        # WAF ML Pipeline
+        result = await detector.detect(
+            method=request.method,
+            path=f"/{path}",
+            query_string=request.url.query,
+            headers=headers_dict,
+            body=body_str
+        )
+        
+        severity = determine_severity(result.anomaly_score)
+        request_data = {
+            "method": request.method,
+            "path": f"/{path}",
+            "query_string": request.url.query,
+            "headers": headers_dict,
+            "body": body_str
+        }
+        result_dict = {
+            "anomaly_score": result.anomaly_score,
+            "is_anomalous": result.is_anomalous,
+            "threshold": result.threshold,
+            "attack_type": (result.metadata or {}).get("attack_type", "NONE"),
+        }
+        
+        await emit_detection_event(request_data, result_dict)
+        
+        if result.is_anomalous:
+            if SYSTEM_CONFIG.detection_mode == "block":
+                if logger:
+                    logger.warning(f"PROXY BLOCKED: {request.method} /{path} Score: {result.anomaly_score}")
+                return JSONResponse(
+                    status_code=403, 
+                    content={"error": "Request blocked by WAF", "score": result.anomaly_score, "severity": severity}
+                )
+            elif SYSTEM_CONFIG.detection_mode == "detect":
+                if logger:
+                    logger.warning(f"PROXY ALERT: {request.method} /{path} Score: {result.anomaly_score}")
+                
+    target_url = f"{upstream_url.rstrip('/')}/{path}"
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+        
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.request(
+                method=request.method,
+                url=target_url,
+                headers=headers_dict,
+                data=body_bytes,
+                allow_redirects=False
+            ) as response:
+                
+                resp_headers = {}
+                hop_by_hop = {'connection', 'keep-alive', 'proxy-authenticate', 
+                              'proxy-authorization', 'te', 'trailers', 'transfer-encoding', 'upgrade', 'content-encoding'}
+                for k, v in response.headers.items():
+                    if k.lower() not in hop_by_hop:
+                        resp_headers[k] = v
+                        
+                resp_body = await response.read()
+                return Response(
+                    content=resp_body, 
+                    status_code=response.status, 
+                    headers=resp_headers
+                )
+    except aiohttp.ClientConnectorError:
+        return JSONResponse(status_code=502, content={"error": "Bad Gateway - Upstream down"})
+    except Exception as e:
+        if logger:
+            logger.error(f"Proxy error: {str(e)}")
+        return JSONResponse(status_code=500, content={"error": "Internal WAF Error"})
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions with secure logging"""
+    if exc.status_code >= 500:
+        logger.error(
+            "HTTP error",
+            status_code=exc.status_code,
+            path=request.url.path,
+            detail=exc.detail,
+        )
+    else:
+        logger.warning(
+            "HTTP error", status_code=exc.status_code, path=request.url.path
+        )
+
+    return JSONResponse(
+        status_code=exc.status_code, content={"detail": exc.detail}
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global exception handler with secure logging"""
+    # Log error without exposing internals
+    logger.error(
+        "Unhandled exception",
+        error_type=type(exc).__name__,
+        path=request.url.path,
+        method=request.method,
+    )
+
+    # Don't expose internal error details to client
+    return JSONResponse(
+        status_code=500, content={"detail": "Internal server error"}
+    )
+
+
+def main():
+    """Main function to run the API"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run WAF API service")
+    parser.add_argument(
+        "--host", type=str, default="0.0.0.0", help="Host address"
+    )
+    parser.add_argument("--port", type=int, default=8000, help="Port number")
+    parser.add_argument(
+        "--workers", type=int, default=1, help="Number of workers"
+    )
+    parser.add_argument(
+        "--reload", action="store_true", help="Enable auto-reload"
+    )
+    args = parser.parse_args()
+
+    # Run server
+    uvicorn.run(
+        "api.waf_api:app",
+        host=args.host,
+        port=args.port,
+        workers=args.workers,
+        reload=args.reload,
+        log_level="info",
+    )
+
+
 if __name__ == "__main__":
     main()
