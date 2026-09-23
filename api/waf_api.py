@@ -2043,6 +2043,123 @@ async def submit_detection_feedback(feedback: DetectionFeedbackRequest):
     }
 
 
+@app.post("/threshold")
+async def update_threshold(
+    threshold: float,
+    x_api_key: Optional[str] = Header(
+        None, description="API key for authentication"
+    ),
+):
+    """
+    Update anomaly detection threshold.
+
+    Security: Requires API key authentication (optional, configure for production)
+
+    Args:
+        threshold: New threshold value (0-1)
+        x_api_key: API key header (optional)
+
+    Returns:
+        Updated threshold
+    """
+    if not detector:
+        raise HTTPException(status_code=503, detail="Detector not initialized")
+
+    verify_api_key(x_api_key)
+
+    # Validate threshold
+    if not 0 <= threshold <= 1:
+        raise HTTPException(
+            status_code=400, detail="Threshold must be between 0 and 1"
+        )
+
+    old_threshold = detector.threshold
+    detector.update_threshold(threshold)
+
+    # Secure logging
+    logger.info(
+        "Threshold updated",
+        old_threshold=old_threshold,
+        new_threshold=threshold,
+    )
+
+    return {
+        "threshold": threshold,
+        "previous_threshold": old_threshold,
+        "message": f"Threshold updated from {old_threshold} to {threshold}",
+    }
+
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    """Handle Pydantic validation errors"""
+    logger.warning(
+        "Validation error", path=request.url.path, errors=str(exc.errors())
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Request validation failed",
+            "errors": exc.errors(),
+        },
+    )
+
+
+# ===== WebSocket Endpoint =====
+
+
+@app.websocket("/ws/live")
+async def websocket_live_monitoring(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time detection streaming
+
+    Streams:
+        - Live HTTP requests
+        - Anomaly scores
+        - Detection results
+        - Severity levels
+    """
+    if not ws_manager:
+        await websocket.close(
+            code=1011, reason="WebSocket manager not initialized"
+        )
+        return
+
+    await ws_manager.connect(websocket)
+
+    try:
+        # Keep connection alive and handle client messages
+        while True:
+            # Wait for messages from client (ping/pong, commands, etc.)
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(), timeout=30.0
+                )
+
+                # Handle client commands
+                if data == "ping":
+                    await websocket.send_text("pong")
+                elif data == "status":
+                    status = {
+                        "type": "status",
+                        "connected": True,
+                        "activeConnections": len(
+                            ws_manager.active_connections
+                        ),
+                    }
+                    await ws_manager.send_personal(status, websocket)
+
+            except asyncio.TimeoutError:
+                # Send keepalive ping
+                await websocket.send_text('{"type":"ping"}')
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected normally")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        ws_manager.disconnect(websocket)
+
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def waf_proxy(request: Request, path: str):
