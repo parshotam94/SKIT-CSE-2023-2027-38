@@ -70,3 +70,91 @@ class LogTailer:
                 self.file_handle.close()
 
 
+class StreamIngester:
+    """
+    Streams access logs to WAF API for real-time scanning.
+    """
+
+    def __init__(
+        self,
+        log_file: str,
+        api_url: str,
+        batch_size: int = 10,
+        max_retries: int = 3,
+        timeout: float = 5.0
+    ):
+        """
+        Initialize stream ingester.
+
+        Args:
+            log_file: Path to access log file
+            api_url: WAF API URL
+            batch_size: Batch size for API calls
+            max_retries: Maximum retries for failed requests
+            timeout: Request timeout
+        """
+        self.log_file = log_file
+        self.api_url = api_url
+        self.batch_size = batch_size
+        self.max_retries = max_retries
+        self.timeout = aiohttp.ClientTimeout(total=timeout)
+
+        # Parser
+        self.parser = AccessLogParser()
+
+        # Logger
+        self.logger = setup_logger()
+
+        # Statistics
+        self.stats = {
+            "lines_processed": 0,
+            "requests_scanned": 0,
+            "anomalies_detected": 0,
+            "api_errors": 0,
+            "parse_errors": 0,
+        }
+
+    async def send_to_api(
+        self,
+        session: aiohttp.ClientSession,
+        request_data: dict
+    ) -> Optional[dict]:
+        """
+        Send request to WAF API.
+
+        Args:
+            session: aiohttp session
+            request_data: Request data
+
+        Returns:
+            API response or None
+        """
+        for attempt in range(self.max_retries):
+            try:
+                async with session.post(
+                    self.api_url,
+                    json=request_data,
+                    timeout=self.timeout
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result
+                    else:
+                        self.logger.warning(
+                            f"API returned status {response.status}"
+                        )
+
+            except asyncio.TimeoutError:
+                self.logger.warning(f"API timeout (attempt {attempt + 1})")
+
+            except Exception as e:
+                self.logger.error(f"API error: {e}")
+
+            # Wait before retry
+            if attempt < self.max_retries - 1:
+                await asyncio.sleep(1.0 * (attempt + 1))
+
+        self.stats["api_errors"] += 1
+        return None
+
+    
