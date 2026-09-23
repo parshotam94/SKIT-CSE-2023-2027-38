@@ -2044,61 +2044,6 @@ async def submit_detection_feedback(feedback: DetectionFeedbackRequest):
 
 
 
-
-
-@app.websocket("/ws/live")
-async def websocket_live_monitoring(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time detection streaming
-
-    Streams:
-        - Live HTTP requests
-        - Anomaly scores
-        - Detection results
-        - Severity levels
-    """
-    if not ws_manager:
-        await websocket.close(
-            code=1011, reason="WebSocket manager not initialized"
-        )
-        return
-
-    await ws_manager.connect(websocket)
-
-    try:
-        # Keep connection alive and handle client messages
-        while True:
-            # Wait for messages from client (ping/pong, commands, etc.)
-            try:
-                data = await asyncio.wait_for(
-                    websocket.receive_text(), timeout=30.0
-                )
-
-                # Handle client commands
-                if data == "ping":
-                    await websocket.send_text("pong")
-                elif data == "status":
-                    status = {
-                        "type": "status",
-                        "connected": True,
-                        "activeConnections": len(
-                            ws_manager.active_connections
-                        ),
-                    }
-                    await ws_manager.send_personal(status, websocket)
-
-            except asyncio.TimeoutError:
-                # Send keepalive ping
-                await websocket.send_text('{"type":"ping"}')
-
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected normally")
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-    finally:
-        ws_manager.disconnect(websocket)
-
-
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def waf_proxy(request: Request, path: str):
     """
