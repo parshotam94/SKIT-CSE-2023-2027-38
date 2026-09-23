@@ -300,17 +300,6 @@ class BatchScanRequest(BaseModel):
         }
     )
 
-
-class BatchScanResponse(BaseModel):
-    """Batch scan response"""
-
-    results: List[ScanResponse] = Field(..., description="Scan results")
-    total_requests: int = Field(..., description="Total requests scanned")
-    anomalous_count: int = Field(
-        ..., description="Number of anomalous requests"
-    )
-
-
 class HealthResponse(BaseModel):
     """Health check response"""
 
@@ -322,6 +311,18 @@ class HealthResponse(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     model_config = ConfigDict(protected_namespaces=())
+
+class BatchScanResponse(BaseModel):
+    """Batch scan response"""
+
+    results: List[ScanResponse] = Field(..., description="Scan results")
+    total_requests: int = Field(..., description="Total requests scanned")
+    anomalous_count: int = Field(
+        ..., description="Number of anomalous requests"
+    )
+
+
+
 
 
 # Initialize FastAPI app with security
