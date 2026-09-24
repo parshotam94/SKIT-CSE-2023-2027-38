@@ -241,4 +241,81 @@ class StreamIngester:
             if batch:
                 await self.process_batch(session, batch)
 
-    
+    def log_stats(self):
+        """Log current statistics"""
+        self.logger.info(
+            "Stream ingestion statistics",
+            **self.stats
+        )
+
+        if self.stats["requests_scanned"] > 0:
+            anomaly_rate = (
+                self.stats["anomalies_detected"] / 
+                self.stats["requests_scanned"]
+            )
+            self.logger.log_metric(
+                "stream_anomaly_rate",
+                anomaly_rate,
+                tags={"log_file": str(self.log_file)}
+            )
+
+
+async def stream_ingest(
+    log_file: str,
+    api_url: str,
+    batch_size: int = 10
+):
+    """
+    Stream ingest access logs to WAF API.
+
+    Args:
+        log_file: Path to access log file
+        api_url: WAF API URL
+        batch_size: Batch size
+    """
+    ingester = StreamIngester(
+        log_file=log_file,
+        api_url=api_url,
+        batch_size=batch_size
+    )
+
+    try:
+        await ingester.run()
+    except KeyboardInterrupt:
+        ingester.logger.info("Stream ingestion stopped by user")
+        ingester.log_stats()
+
+
+def main():
+    """Main function"""
+    parser = argparse.ArgumentParser(description="Stream ingest access logs")
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        required=True,
+        help="Access log file to tail"
+    )
+    parser.add_argument(
+        "--api-url",
+        type=str,
+        default="http://localhost:8000/scan",
+        help="WAF API URL"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=10,
+        help="Batch size for API calls"
+    )
+    args = parser.parse_args()
+
+    # Run ingestion
+    asyncio.run(stream_ingest(
+        log_file=args.log_file,
+        api_url=args.api_url,
+        batch_size=args.batch_size
+    ))
+
+
+if __name__ == "__main__":
+    main()
