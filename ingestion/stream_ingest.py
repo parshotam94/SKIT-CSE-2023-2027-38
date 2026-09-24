@@ -157,4 +157,88 @@ class StreamIngester:
         self.stats["api_errors"] += 1
         return None
 
+    async def process_batch(
+        self,
+        session: aiohttp.ClientSession,
+        batch: list
+    ):
+        """
+        Process a batch of requests.
+
+        Args:
+            session: aiohttp session
+            batch: Batch of parsed requests
+        """
+        # Send all requests concurrently
+        tasks = []
+        for req in batch:
+            request_data = {
+                "method": req.method,
+                "path": req.path,
+                "query_string": req.query_string,
+                "headers": req.headers,
+                "body": ""
+            }
+            tasks.append(self.send_to_api(session, request_data))
+
+        # Wait for all responses
+        results = await asyncio.gather(*tasks)
+
+        # Process results
+        for result in results:
+            if result:
+                self.stats["requests_scanned"] += 1
+
+                if result.get("is_anomalous", False):
+                    self.stats["anomalies_detected"] += 1
+
+                    # Log anomaly
+                    self.logger.warning(
+                        "Anomaly detected in stream",
+                        anomaly_score=result.get("anomaly_score"),
+                        threshold=result.get("threshold")
+                    )
+
+    async def run(self):
+        """
+        Run the stream ingester.
+        """
+        self.logger.info(
+            "Starting stream ingestion",
+            log_file=self.log_file,
+            api_url=self.api_url
+        )
+
+        # Create tailer
+        tailer = LogTailer(self.log_file)
+
+        # Create HTTP session
+        async with aiohttp.ClientSession() as session:
+            batch = []
+
+            # Start tailing
+            async for line in tailer.tail():
+                self.stats["lines_processed"] += 1
+
+                # Parse line
+                parsed = self.parser.parse_line(line)
+
+                if parsed:
+                    batch.append(parsed)
+
+                    # Process batch when full
+                    if len(batch) >= self.batch_size:
+                        await self.process_batch(session, batch)
+                        batch = []
+
+                        # Log stats periodically
+                        if self.stats["requests_scanned"] % 100 == 0:
+                            self.log_stats()
+                else:
+                    self.stats["parse_errors"] += 1
+
+            # Process remaining batch
+            if batch:
+                await self.process_batch(session, batch)
+
     
