@@ -73,3 +73,38 @@ class ConnectionManager:
         except Exception as e:
             self.logger.error(f"Failed to send personal message: {e}")
 
+
+class LiveMonitoringHandler:
+    """
+    Handles live traffic monitoring and detection
+    Streams results via WebSocket
+
+    NOTE: Does NOT generate traffic. Only broadcasts events from:
+    - Real /scan requests
+    - Demo traffic generator (when demo_mode enabled)
+    """
+
+    def __init__(self, detector: AnomalyDetector, connection_manager: ConnectionManager):
+        """
+        Initialize handler
+
+        Args:
+            detector: Anomaly detection model
+            connection_manager: WebSocket connection manager
+        """
+        self.detector = detector
+        self.manager = connection_manager
+        self.logger = WAFLogger(__name__)
+        self._running = False
+
+    async def start(self):
+        """
+        Start handler (passive mode - only broadcasts events, doesn't generate traffic)
+        """
+        self._running = True
+        self.logger.info("Live monitoring handler started (passive relay mode)")
+
+    async def stop(self):
+        """Stop handler"""
+        self._running = False
+        self.logger.info("Live monitoring handler stopped")
