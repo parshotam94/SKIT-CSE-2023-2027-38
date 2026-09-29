@@ -213,3 +213,120 @@ class AccessLogParser:
             return path, query_string
         except Exception:
             return uri, ""
+
+    def _parse_timestamp(self, timestamp_str: str) -> Optional[datetime]:
+        """
+        Parse timestamp string into datetime object.
+
+        Args:
+            timestamp_str: Raw timestamp string
+
+        Returns:
+            datetime object or None
+        """
+        for fmt in self.TIMESTAMP_FORMATS:
+            try:
+                return datetime.strptime(timestamp_str, fmt)
+            except ValueError:
+                continue
+
+        # If all formats fail, return None
+        return None
+
+    def parse_file(self, file_path: str) -> List[ParsedRequest]:
+        """
+        Parse an entire access log file.
+
+        Args:
+            file_path: Path to log file
+
+        Returns:
+            List of ParsedRequest objects
+        """
+        parsed_requests = []
+
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    parsed = self.parse_line(line)
+                    if parsed:
+                        parsed_requests.append(parsed)
+        except Exception as e:
+            raise IOError(f"Failed to parse log file {file_path}: {e}")
+
+        return parsed_requests
+
+    def parse_lines(self, lines: List[str]) -> List[ParsedRequest]:
+        """
+        Parse multiple log lines.
+
+        Args:
+            lines: List of log lines
+
+        Returns:
+            List of ParsedRequest objects
+        """
+        parsed_requests = []
+        for line in lines:
+            parsed = self.parse_line(line)
+            if parsed:
+                parsed_requests.append(parsed)
+        return parsed_requests
+
+    def get_stats(self) -> Dict[str, int]:
+        """
+        Get parsing statistics.
+
+        Returns:
+            Dictionary with parsing stats
+        """
+        return {
+            "parsed_count": self.parsed_count,
+            "error_count": self.error_count,
+            "success_rate": (
+                self.parsed_count / max(self.parsed_count + self.error_count, 1)
+            )
+        }
+
+
+def parse_access_log(file_path: str) -> List[ParsedRequest]:
+    """
+    Convenience function to parse an access log file.
+
+    Args:
+        file_path: Path to log file
+
+    Returns:
+        List of ParsedRequest objects
+    """
+    parser = AccessLogParser()
+    return parser.parse_file(file_path)
+
+
+if __name__ == "__main__":
+    # Demo usage
+    import sys
+
+    # Sample log lines for testing
+    sample_logs = [
+        '192.168.1.100 - - [22/Jan/2026:10:30:45 +0000] "GET /api/users?id=123 HTTP/1.1" 200 1234 "http://example.com" "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"',
+        '10.0.0.50 - - [22/Jan/2026:10:31:12 +0000] "POST /api/login HTTP/1.1" 200 567 "-" "curl/7.68.0"',
+        '172.16.0.10 - - [22/Jan/2026:10:32:03 +0000] "GET /admin/dashboard HTTP/1.1" 403 0 "http://example.com/login" "Python-urllib/3.8"',
+        '192.168.1.200 - - [22/Jan/2026:10:33:21 +0000] "DELETE /api/users/456 HTTP/1.1" 204 0 "-" "PostmanRuntime/7.26.8"',
+    ]
+
+    parser = AccessLogParser()
+
+    print("Parsing sample access logs...\n")
+    for log_line in sample_logs:
+        parsed = parser.parse_line(log_line)
+        if parsed:
+            print(f"Method: {parsed.method}")
+            print(f"Path: {parsed.path}")
+            print(f"Query: {parsed.query_string}")
+            print(f"Status: {parsed.status_code}")
+            print(f"IP: {parsed.ip_address}")
+            print(f"User-Agent: {parsed.user_agent}")
+            print("-" * 60)
+
+    print(f"\nStatistics: {parser.get_stats()}")
