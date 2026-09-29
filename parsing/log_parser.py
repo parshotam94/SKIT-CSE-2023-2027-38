@@ -159,3 +159,57 @@ class AccessLogParser:
             raw_log_line=line
         )
 
+    def _parse_request_line(self, request_line: str) -> Tuple[str, str, str]:
+        """
+        Parse HTTP request line.
+
+        Args:
+            request_line: Raw request line (e.g., "GET /api/users HTTP/1.1")
+
+        Returns:
+            Tuple of (method, uri, protocol)
+        """
+        if not request_line:
+            return "", "", ""
+
+        match = self.REQUEST_LINE_PATTERN.match(request_line)
+        if match:
+            return (
+                match.group("method"),
+                match.group("uri"),
+                match.group("protocol")
+            )
+
+        # Fallback: split by spaces
+        parts = request_line.split()
+        if len(parts) >= 3:
+            return parts[0], parts[1], parts[2]
+        elif len(parts) == 2:
+            return parts[0], parts[1], "HTTP/1.1"
+
+        return "", "", ""
+
+    def _parse_uri(self, uri: str) -> Tuple[str, str]:
+        """
+        Parse URI into path and query string.
+
+        Args:
+            uri: Full URI (e.g., "/api/users?id=123")
+
+        Returns:
+            Tuple of (path, query_string)
+        """
+        try:
+            # URL decode
+            uri = unquote(uri)
+
+            # Split path and query
+            if "?" in uri:
+                path, query_string = uri.split("?", 1)
+            else:
+                path = uri
+                query_string = ""
+
+            return path, query_string
+        except Exception:
+            return uri, ""
