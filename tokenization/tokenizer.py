@@ -185,3 +185,104 @@ class WAFTokenizer:
         Returns:
             Decoded text(s)
         """
+        # Handle single sequence or batch
+        if token_ids.dim() == 1:
+            return self.tokenizer.decode(
+                token_ids,
+                skip_special_tokens=skip_special_tokens
+            )
+        else:
+            return self.tokenizer.batch_decode(
+                token_ids,
+                skip_special_tokens=skip_special_tokens
+            )
+
+    def create_masked_input(
+        self,
+        input_ids: torch.Tensor,
+        mask_prob: float = 0.15,
+        random_prob: float = 0.1,
+        keep_prob: float = 0.1
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Create masked input for training (Masked Language Modeling).
+
+        Args:
+            input_ids: Input token IDs
+            mask_prob: Probability of masking a token
+            random_prob: Probability of replacing with random token
+            keep_prob: Probability of keeping original token
+
+        Returns:
+            Dictionary with masked_input_ids and labels
+        """
+        labels = input_ids.clone()
+
+        # Create mask for tokens to mask (excluding special tokens)
+        probability_matrix = torch.full(labels.shape, mask_prob)
+        special_tokens_mask = torch.zeros_like(labels, dtype=torch.bool)
+
+        # Don't mask special tokens
+        for special_token_id in [
+            self.pad_token_id,
+            self.cls_token_id,
+            self.sep_token_id
+        ]:
+            if special_token_id is not None:
+                special_tokens_mask |= (labels == special_token_id)
+
+        probability_matrix.masked_fill_(special_tokens_mask, value=0.0)
+        masked_indices = torch.bernoulli(probability_matrix).bool()
+
+        # Only compute loss on masked tokens
+        labels[~masked_indices] = -100
+
+        # 80% of the time: replace with [MASK] token
+        indices_replaced = (
+            torch.bernoulli(torch.full(labels.shape, 1.0 - random_prob - keep_prob)).bool()
+            & masked_indices
+        )
+        input_ids[indices_replaced] = self.mask_token_id
+
+        # 10% of the time: replace with random token
+        indices_random = (
+            torch.bernoulli(torch.full(labels.shape, 0.5)).bool()
+            & masked_indices
+            & ~indices_replaced
+        )
+        random_words = torch.randint(
+            len(self.tokenizer),
+            labels.shape,
+            dtype=torch.long
+        )
+        input_ids[indices_random] = random_words[indices_random]
+
+        # 10% of the time: keep original token
+
+        return {
+            "masked_input_ids": input_ids,
+            "labels": labels,
+            "masked_indices": masked_indices
+        }
+
+    def get_vocab_size(self) -> int:
+        """Get vocabulary size"""
+        return self.vocab_size
+
+    def get_special_tokens(self) -> Dict[str, int]:
+        """Get special token IDs"""
+        return {
+            "pad_token_id": self.pad_token_id,
+            "cls_token_id": self.cls_token_id,
+            "sep_token_id": self.sep_token_id,
+            "mask_token_id": self.mask_token_id,
+        }
+
+    def save(self, save_path: str):
+        """
+        Save tokenizer to disk.
+
+        Args:
+            save_path: Directory to save tokenizer
+        """
+        self.tokenizer.save_pretrained(save_path)
