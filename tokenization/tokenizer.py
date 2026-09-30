@@ -92,3 +92,96 @@ class WAFTokenizer:
         """
         is_batch = isinstance(text, list)
         texts = text if is_batch else [text]
+
+        # Tokenize using HuggingFace tokenizer
+        encoded = self.tokenizer(
+            texts,
+            max_length=self.max_length,
+            padding=self.padding,
+            truncation=self.truncation,
+            return_tensors=self.return_tensors,
+            return_attention_mask=True
+        )
+
+        # Build TokenizedRequest objects
+        results = []
+        for i, txt in enumerate(texts):
+            token_count = encoded["attention_mask"][i].sum().item()
+
+            tokenized = TokenizedRequest(
+                input_ids=encoded["input_ids"][i],
+                attention_mask=encoded["attention_mask"][i],
+                original_text=txt if return_original else "",
+                token_count=token_count
+            )
+            results.append(tokenized)
+
+        return results if is_batch else results[0]
+
+    def tokenize_batch(
+        self,
+        texts: List[str],
+        batch_size: Optional[int] = None
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Tokenize a batch of texts efficiently.
+
+        Args:
+            texts: List of input texts
+            batch_size: Optional batch size for chunking
+
+        Returns:
+            Dictionary with input_ids and attention_mask tensors
+        """
+        if batch_size and len(texts) > batch_size:
+            # Process in chunks
+            all_input_ids = []
+            all_attention_masks = []
+
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i:i + batch_size]
+                encoded = self.tokenizer(
+                    batch,
+                    max_length=self.max_length,
+                    padding=self.padding,
+                    truncation=self.truncation,
+                    return_tensors=self.return_tensors,
+                    return_attention_mask=True
+                )
+                all_input_ids.append(encoded["input_ids"])
+                all_attention_masks.append(encoded["attention_mask"])
+
+            return {
+                "input_ids": torch.cat(all_input_ids, dim=0),
+                "attention_mask": torch.cat(all_attention_masks, dim=0)
+            }
+        else:
+            # Process all at once
+            encoded = self.tokenizer(
+                texts,
+                max_length=self.max_length,
+                padding=self.padding,
+                truncation=self.truncation,
+                return_tensors=self.return_tensors,
+                return_attention_mask=True
+            )
+            return {
+                "input_ids": encoded["input_ids"],
+                "attention_mask": encoded["attention_mask"]
+            }
+
+    def decode(
+        self,
+        token_ids: torch.Tensor,
+        skip_special_tokens: bool = True
+    ) -> Union[str, List[str]]:
+        """
+        Decode token IDs back to text.
+
+        Args:
+            token_ids: Token ID tensor
+            skip_special_tokens: Skip special tokens in output
+
+        Returns:
+            Decoded text(s)
+        """
