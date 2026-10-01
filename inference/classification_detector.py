@@ -298,3 +298,94 @@ class ClassificationDetector:
         # Create result
         result = ClassificationResult(
             attack_type=attack_type,
+            attack_class=attack_class,
+            confidence=confidence,
+            is_attack=is_attack,
+            severity=severity,
+            all_probabilities=output.to_dict()['probabilities'],
+            normalized_request=normalized,
+            inference_time_ms=inference_time_ms,
+            metadata={
+                'method': method,
+                'path': path
+            }
+        )
+
+        return result
+
+    async def detect_batch(
+        self,
+        requests: List[Dict]
+    ) -> List[ClassificationResult]:
+        """
+        Classify batch of HTTP requests.
+
+        Args:
+            requests: List of request dictionaries
+
+        Returns:
+            List of ClassificationResult objects
+        """
+        results = []
+
+        for request in requests:
+            result = await self.detect(
+                method=request.get('method', 'GET'),
+                path=request.get('path', '/'),
+                query_string=request.get('query_string', ''),
+                headers=request.get('headers', {}),
+                body=request.get('body', '')
+            )
+            results.append(result)
+
+        return results
+
+    def get_metrics(self) -> Dict:
+        """Get performance metrics"""
+        return self.metrics.to_dict()
+
+    def reset_metrics(self):
+        """Reset performance metrics"""
+        self.metrics = PerformanceMetrics()
+
+    def get_model_info(self) -> Dict:
+        """Get model information"""
+        return {
+            'model_path': str(self.model_path),
+            'device': self.device,
+            'confidence_threshold': self.confidence_threshold,
+            'num_classes': len(CLASS_LABELS),
+            'class_labels': list(CLASS_LABELS.values())
+        }
+
+    def update_threshold(self, new_threshold: float):
+        """Update confidence threshold"""
+        if 0.0 <= new_threshold <= 1.0:
+            self.confidence_threshold = new_threshold
+            self.logger.info(f"Threshold updated to {new_threshold}")
+        else:
+            raise ValueError("Threshold must be between 0.0 and 1.0")
+
+
+# Factory function for backward compatibility
+def create_detector(
+    model_path: str,
+    device: str = "cuda",
+    threshold: float = 0.75
+) -> ClassificationDetector:
+    """
+    Create classification detector.
+
+    Args:
+        model_path: Path to model checkpoint
+        device: Device for inference
+        threshold: Confidence threshold
+
+    Returns:
+        ClassificationDetector instance
+    """
+    return ClassificationDetector(
+        model_path=model_path,
+        device=device,
+        confidence_threshold=threshold
+    )
