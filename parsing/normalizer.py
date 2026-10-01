@@ -279,3 +279,112 @@ class RequestNormalizer:
             text = self.PATTERNS["long_number"][0].sub(self.PATTERNS["long_number"][1], text)
 
         return text
+
+    def _normalize_query_string(self, query_string: str) -> str:
+        """
+        Normalize query string parameters.
+
+        Args:
+            query_string: Raw query string
+
+        Returns:
+            Normalized query string
+        """
+        if not query_string:
+            return ""
+
+        try:
+            # Parse query parameters
+            params = parse_qs(query_string, keep_blank_values=True)
+
+            # Normalize each parameter value
+            normalized_params = {}
+            for key, values in params.items():
+                normalized_key = self._normalize_text(key)
+                normalized_values = [self._normalize_text(v) for v in values]
+                normalized_params[normalized_key] = normalized_values
+
+            # Reconstruct query string (sorted for consistency)
+            sorted_items = sorted(normalized_params.items())
+            return "&".join(f"{k}={v[0]}" for k, v in sorted_items)
+
+        except Exception:
+            # Fallback: normalize as plain text
+            return self._normalize_text(query_string)
+
+    def normalize_batch(
+        self,
+        requests: list
+    ) -> list:
+        """
+        Normalize a batch of requests.
+
+        Args:
+            requests: List of request dictionaries or ParsedRequest objects
+
+        Returns:
+            List of NormalizedRequest objects
+        """
+        normalized = []
+        for req in requests:
+            if hasattr(req, 'method'):  # ParsedRequest object
+                norm = self.normalize(
+                    method=req.method,
+                    path=req.path,
+                    query_string=req.query_string,
+                    headers=req.headers
+                )
+            else:  # Dictionary
+                norm = self.normalize(
+                    method=req.get('method', ''),
+                    path=req.get('path', ''),
+                    query_string=req.get('query_string', ''),
+                    headers=req.get('headers', {})
+                )
+            normalized.append(norm)
+        return normalized
+
+
+if __name__ == "__main__":
+    # Demo usage
+    normalizer = RequestNormalizer()
+
+    # Test requests
+    test_requests = [
+        {
+            "method": "GET",
+            "path": "/api/users/12345",
+            "query_string": "session=abc123def456&timestamp=1674123456",
+        },
+        {
+            "method": "POST",
+            "path": "/api/auth/login",
+            "query_string": "redirect_url=http://192.168.1.100/dashboard",
+        },
+        {
+            "method": "GET",
+            "path": "/files/document-a1b2c3d4-e5f6-7890-abcd-ef1234567890.pdf",
+            "query_string": "",
+        },
+        {
+            "method": "DELETE",
+            "path": "/api/items/98765",
+            "query_string": "user_id=54321&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature",
+        },
+    ]
+
+    print("Request Normalization Demo\n")
+    print("=" * 80)
+
+    for i, req in enumerate(test_requests, 1):
+        normalized = normalizer.normalize(
+            req["method"],
+            req["path"],
+            req["query_string"]
+        )
+
+        print(f"\nRequest {i}:")
+        print(f"  Original: {req['method']} {req['path']}?{req['query_string']}")
+        print(f"  Normalized: {normalized.normalized_text}")
+
+    print("\n" + "=" * 80)
