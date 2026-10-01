@@ -286,3 +286,93 @@ class WAFTokenizer:
             save_path: Directory to save tokenizer
         """
         self.tokenizer.save_pretrained(save_path)
+
+    @classmethod
+    def load(cls, load_path: str, **kwargs) -> "WAFTokenizer":
+        """
+        Load tokenizer from disk.
+
+        Args:
+            load_path: Directory containing saved tokenizer
+            **kwargs: Additional arguments for WAFTokenizer
+
+        Returns:
+            Loaded WAFTokenizer instance
+        """
+        return cls(model_name=load_path, **kwargs)
+
+
+def create_tokenizer(
+    model_name: str = "distilbert-base-uncased",
+    max_length: int = 128
+) -> WAFTokenizer:
+    """
+    Convenience function to create a tokenizer.
+
+    Args:
+        model_name: HuggingFace model name
+        max_length: Maximum sequence length
+
+    Returns:
+        WAFTokenizer instance
+    """
+    return WAFTokenizer(model_name=model_name, max_length=max_length)
+
+
+if __name__ == "__main__":
+    # Demo usage
+    print("WAF Tokenizer Demo\n")
+    print("=" * 80)
+
+    # Initialize tokenizer
+    tokenizer = WAFTokenizer(
+        model_name="distilbert-base-uncased",
+        max_length=64
+    )
+
+    print(f"Model: {tokenizer.model_name}")
+    print(f"Vocab size: {tokenizer.vocab_size}")
+    print(f"Max length: {tokenizer.max_length}")
+    print(f"Special tokens: {tokenizer.get_special_tokens()}")
+    print()
+
+    # Sample normalized requests
+    sample_requests = [
+        "GET /api/users/[ID] ?user_id=[ID]",
+        "POST /api/login ?redirect_url=[IP]/dashboard",
+        "DELETE /api/items/[ID] ?user_id=[ID]&token=[JWT]",
+        "GET /files/document-[UUID].pdf",
+    ]
+
+    print("Tokenizing sample requests:\n")
+    for i, request in enumerate(sample_requests, 1):
+        tokenized = tokenizer.tokenize(request)
+
+        print(f"Request {i}: {request}")
+        print(f"  Token count: {tokenized.token_count}")
+        print(f"  Input IDs shape: {tokenized.input_ids.shape}")
+        print(f"  Input IDs (first 10): {tokenized.input_ids[:10].tolist()}")
+
+        # Decode back
+        decoded = tokenizer.decode(tokenized.input_ids)
+        print(f"  Decoded: {decoded}")
+        print()
+
+    # Batch tokenization
+    print("Batch tokenization:")
+    batch_encoded = tokenizer.tokenize_batch(sample_requests)
+    print(f"  Batch input_ids shape: {batch_encoded['input_ids'].shape}")
+    print(f"  Batch attention_mask shape: {batch_encoded['attention_mask'].shape}")
+    print()
+
+    # Masked language modeling
+    print("Creating masked input (for training):")
+    masked_data = tokenizer.create_masked_input(
+        batch_encoded["input_ids"][0].unsqueeze(0),
+        mask_prob=0.15
+    )
+    print(f"  Original: {tokenizer.decode(batch_encoded['input_ids'][0])}")
+    print(f"  Masked: {tokenizer.decode(masked_data['masked_input_ids'][0])}")
+    print(f"  Masked positions: {masked_data['masked_indices'][0].sum().item()}")
+
+    print("\n" + "=" * 80)
