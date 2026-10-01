@@ -23,4 +23,13 @@ function App() {
             <Route path="analytics" element={<Analytics />} />
             <Route path="settings" element={<Settings />} />
             <Route path="docs" element={<Documentation />} />
-          </Route>
+          </Route></Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
+  );
+}
+
+console.log('App component defined');
+
+export default App;
+git
