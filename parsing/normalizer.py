@@ -141,3 +141,141 @@ class RequestNormalizer:
             "[PHONE]"
         ),
     }
+
+    def __init__(
+        self,
+        normalize_ip: bool = True,
+        normalize_timestamp: bool = True,
+        normalize_session_ids: bool = True,
+        normalize_uuids: bool = True,
+        normalize_hashes: bool = True,
+        normalize_numbers: bool = True,
+        normalize_emails: bool = True,
+        lowercase: bool = True,
+        collapse_whitespace: bool = True
+    ):
+        """
+        Initialize normalizer with configuration.
+
+        Args:
+            normalize_ip: Replace IP addresses
+            normalize_timestamp: Replace timestamps
+            normalize_session_ids: Replace session IDs
+            normalize_uuids: Replace UUIDs
+            normalize_hashes: Replace hashes
+            normalize_numbers: Replace numeric IDs
+            normalize_emails: Replace email addresses
+            lowercase: Convert to lowercase
+            collapse_whitespace: Collapse multiple spaces
+        """
+        self.normalize_ip = normalize_ip
+        self.normalize_timestamp = normalize_timestamp
+        self.normalize_session_ids = normalize_session_ids
+        self.normalize_uuids = normalize_uuids
+        self.normalize_hashes = normalize_hashes
+        self.normalize_numbers = normalize_numbers
+        self.normalize_emails = normalize_emails
+        self.lowercase = lowercase
+        self.collapse_whitespace = collapse_whitespace
+
+    def normalize(
+        self,
+        method: str,
+        path: str,
+        query_string: str = "",
+        headers: Optional[Dict[str, str]] = None
+    ) -> NormalizedRequest:
+        """
+        Normalize an HTTP request.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            path: URL path
+            query_string: Query string
+            headers: HTTP headers (optional)
+
+        Returns:
+            NormalizedRequest object
+        """
+        # Start with method and path
+        normalized_parts = [method.upper()]
+
+        # Normalize path
+        normalized_path = self._normalize_text(path)
+        normalized_parts.append(normalized_path)
+
+        # Normalize query string
+        if query_string:
+            normalized_query = self._normalize_query_string(query_string)
+            if normalized_query:
+                normalized_parts.append(f"?{normalized_query}")
+
+        # Optionally include user-agent (common signal)
+        if headers and "User-Agent" in headers:
+            user_agent = headers["User-Agent"]
+            normalized_ua = self._normalize_text(user_agent)
+            normalized_parts.append(f"UA:{normalized_ua}")
+
+        # Combine into single normalized text
+        normalized_text = " ".join(normalized_parts)
+
+        # Final cleanup
+        if self.lowercase:
+            normalized_text = normalized_text.lower()
+
+        if self.collapse_whitespace:
+            normalized_text = re.sub(r'\s+', ' ', normalized_text).strip()
+
+        return NormalizedRequest(
+            normalized_text=normalized_text,
+            original_method=method,
+            original_path=path,
+            original_query=query_string
+        )
+
+    def _normalize_text(self, text: str) -> str:
+        """
+        Apply normalization patterns to text.
+
+        Args:
+            text: Input text
+
+        Returns:
+            Normalized text
+        """
+        # Apply patterns in specific order (more specific first)
+        if self.normalize_uuids:
+            text = self.PATTERNS["uuid"][0].sub(self.PATTERNS["uuid"][1], text)
+
+        if self.normalize_hashes:
+            text = self.PATTERNS["sha256"][0].sub(self.PATTERNS["sha256"][1], text)
+            text = self.PATTERNS["sha1"][0].sub(self.PATTERNS["sha1"][1], text)
+            text = self.PATTERNS["md5"][0].sub(self.PATTERNS["md5"][1], text)
+
+        if self.normalize_session_ids:
+            text = self.PATTERNS["session_id"][0].sub(self.PATTERNS["session_id"][1], text)
+            text = self.PATTERNS["jwt"][0].sub(self.PATTERNS["jwt"][1], text)
+            text = self.PATTERNS["base64"][0].sub(self.PATTERNS["base64"][1], text)
+
+        if self.normalize_emails:
+            text = self.PATTERNS["email"][0].sub(self.PATTERNS["email"][1], text)
+
+        if self.normalize_timestamp:
+            text = self.PATTERNS["timestamp_iso"][0].sub(self.PATTERNS["timestamp_iso"][1], text)
+            text = self.PATTERNS["timestamp_unix"][0].sub(self.PATTERNS["timestamp_unix"][1], text)
+
+        if self.normalize_ip:
+            text = self.PATTERNS["ipv4"][0].sub(self.PATTERNS["ipv4"][1], text)
+            text = self.PATTERNS["ipv6"][0].sub(self.PATTERNS["ipv6"][1], text)
+
+        if self.normalize_numbers:
+            # Privacy-sensitive patterns
+            text = self.PATTERNS["credit_card"][0].sub(self.PATTERNS["credit_card"][1], text)
+            text = self.PATTERNS["phone"][0].sub(self.PATTERNS["phone"][1], text)
+
+            # Numeric IDs
+            text = self.PATTERNS["numeric_id_path"][0].sub(self.PATTERNS["numeric_id_path"][1], text)
+            text = self.PATTERNS["numeric_id_query"][0].sub(self.PATTERNS["numeric_id_query"][1], text)
+            text = self.PATTERNS["long_number"][0].sub(self.PATTERNS["long_number"][1], text)
+
+        return text
