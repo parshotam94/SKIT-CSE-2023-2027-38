@@ -7,3 +7,12 @@ import Settings from './pages/Settings';
 import Documentation from './pages/Documentation';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
+console.log('App.tsx loaded');
+
+function App() {
+  console.log('App component rendering');
+  
+  return (
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes></Routes>
