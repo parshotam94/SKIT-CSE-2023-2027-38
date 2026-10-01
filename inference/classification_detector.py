@@ -148,3 +148,153 @@ class ClassificationDetector:
 
         Args:
             model_path: Path to trained model checkpoint
+             tokenizer: WAFTokenizer instance (created if None)
+            device: Device for inference
+            confidence_threshold: Minimum confidence for attack detection
+            max_batch_size: Maximum batch size for inference
+            enable_optimization: Enable model optimizations (JIT, etc.)
+        """
+        self.model_path = Path(model_path)
+        self.device = device
+        self.confidence_threshold = confidence_threshold
+        self.max_batch_size = max_batch_size
+
+        # Initialize logger
+        self.logger = WAFLogger("ClassificationDetector")
+
+        # Initialize tokenizer
+        if tokenizer is None:
+            self.logger.info("Initializing tokenizer...")
+            self.tokenizer = WAFTokenizer()
+        else:
+            self.tokenizer = tokenizer
+
+        # Initialize normalizer
+        self.normalizer = RequestNormalizer()
+
+        # Load model
+        self.logger.info(f"Loading model from {model_path}...")
+        self.model = TransformerWAFClassifier.load_model(
+            str(model_path),
+            device=device
+        )
+        self.model.eval()
+
+        # Apply optimizations
+        if enable_optimization and device == "cuda":
+            self.logger.info("Applying optimizations...")
+            try:
+                # JIT compilation
+                self.model = torch.jit.script(self.model)
+                self.logger.info("✓ JIT compilation successful")
+            except Exception as e:
+                self.logger.warning(f"JIT compilation failed: {e}")
+
+        # Warm up model
+        self.logger.info("Warming up model...")
+        self._warmup()
+
+        # Performance metrics
+        self.metrics = PerformanceMetrics()
+
+        # Semaphore for batch control
+        self.batch_semaphore = asyncio.Semaphore(max_batch_size)
+
+        self.logger.info(f"Detector initialized successfully on {device}")
+
+    def _warmup(self, num_warmup: int = 10):
+        """Warm up model with dummy requests"""
+        dummy_text = "GET /api/users?id=1 HTTP/1.1"
+
+        for _ in range(num_warmup):
+            tokenized = self.tokenizer.tokenize(dummy_text, return_original=False)
+            input_ids = tokenized.input_ids.to(self.device)
+            attention_mask = tokenized.attention_mask.to(self.device)
+
+            with torch.no_grad():
+                _ = self.model.predict(input_ids, attention_mask)
+
+    @lru_cache(maxsize=10000)
+    def _cached_tokenize(self, text: str) -> Tuple:
+        """Cache tokenization results"""
+        tokenized = self.tokenizer.tokenize(text, return_original=False)
+        return (
+            tokenized.input_ids,
+            tokenized.attention_mask
+        )
+
+    async def detect(
+        self,
+        method: str,
+        path: str,
+        query_string: str = "",
+        headers: Optional[Dict] = None,
+        body: str = ""
+    ) -> ClassificationResult:
+        """
+        Classify HTTP request.
+
+        Args:
+            method: HTTP method
+            path: URL path
+            query_string: Query string
+            headers: Request headers
+            body: Request body
+
+        Returns:
+            ClassificationResult with attack type and confidence
+        """
+        start_time = time.time()
+
+        # Normalize request
+        request_data = {
+            "method": method,
+            "path": path,
+            "query": query_string,
+            "headers": headers or {},
+            "body": body
+        }
+
+        normalized = self.normalizer.normalize(request_data)
+
+        # Create text representation
+        text = f"{method} {path} {query_string} {body}"
+
+        # Tokenize (with caching)
+        try:
+            input_ids, attention_mask = self._cached_tokenize(text)
+        except TypeError:
+            # Cache miss or uncacheable
+            tokenized = self.tokenizer.tokenize(text, return_original=False)
+            input_ids = tokenized.input_ids
+            attention_mask = tokenized.attention_mask
+
+        # Move to device
+        input_ids = input_ids.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+
+        # Inference
+        async with self.batch_semaphore:
+            with torch.no_grad():
+                output = self.model.predict(input_ids, attention_mask)
+
+        # Parse results
+        attack_type = output.predicted_label
+        attack_class = output.predicted_class
+        confidence = output.confidence
+        is_attack = attack_class != 0 and confidence >= self.confidence_threshold
+        severity = self.model.get_attack_severity(attack_class, confidence)
+
+        # Calculate inference time
+        inference_time_ms = (time.time() - start_time) * 1000
+
+        # Update metrics
+        self.metrics.record_request(
+            latency_ms=inference_time_ms,
+            attack_type=attack_type,
+            is_attack=is_attack
+        )
+
+        # Create result
+        result = ClassificationResult(
+            attack_type=attack_type,
