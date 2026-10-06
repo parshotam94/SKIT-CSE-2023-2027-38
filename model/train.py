@@ -70,3 +70,114 @@ class HTTPRequestDataset(Dataset):
             "labels": masked_data["labels"].squeeze(0)
         }
 
+
+class Trainer:
+    """
+    Trainer for the WAF model.
+    """
+
+    def __init__(
+        self,
+        model: TransformerAutoencoder,
+        train_dataloader: DataLoader,
+        val_dataloader: Optional[DataLoader] = None,
+        learning_rate: float = 2e-5,
+        num_epochs: int = 10,
+        warmup_steps: int = 500,
+        weight_decay: float = 0.01,
+        device: str = "cuda",
+        save_dir: str = "./checkpoints",
+        log_every: int = 100,
+        save_every: int = 1
+    ):
+        """
+        Initialize trainer.
+
+        Args:
+            model: Model to train
+            train_dataloader: Training data loader
+            val_dataloader: Validation data loader
+            learning_rate: Learning rate
+            num_epochs: Number of epochs
+            warmup_steps: Warmup steps
+            weight_decay: Weight decay
+            device: Device (cuda/cpu)
+            save_dir: Checkpoint save directory
+            log_every: Log every N steps
+            save_every: Save every N epochs
+        """
+        self.model = model.to(device)
+        self.train_dataloader = train_dataloader
+        self.val_dataloader = val_dataloader
+        self.num_epochs = num_epochs
+        self.device = device
+        self.save_dir = Path(save_dir)
+        self.log_every = log_every
+        self.save_every = save_every
+
+        # Create save directory
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+
+        # Optimizer
+        self.optimizer = AdamW(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay
+        )
+
+        # Learning rate scheduler
+        total_steps = len(train_dataloader) * num_epochs
+        self.scheduler = get_linear_schedule_with_warmup(
+            self.optimizer,
+            num_warmup_steps=warmup_steps,
+            num_training_steps=total_steps
+        )
+
+        # Setup logger
+        self.logger = setup_logger()
+
+        # Training state
+        self.global_step = 0
+        self.current_epoch = 0
+        self.best_val_loss = float('inf')
+
+    def train(self):
+        """Run training loop"""
+        self.logger.info(
+            "Starting training",
+            num_epochs=self.num_epochs,
+            train_samples=len(self.train_dataloader.dataset),
+            device=self.device
+        )
+
+        for epoch in range(self.num_epochs):
+            self.current_epoch = epoch
+
+            # Train
+            train_loss = self.train_epoch()
+
+            # Validate
+            val_loss = None
+            if self.val_dataloader:
+                val_loss = self.validate()
+
+            # Log epoch summary
+            self.logger.log_training_progress(
+                epoch=epoch + 1,
+                total_epochs=self.num_epochs,
+                loss=train_loss,
+                learning_rate=self.scheduler.get_last_lr()[0],
+                samples_processed=len(self.train_dataloader.dataset)
+            )
+
+            if val_loss is not None:
+                self.logger.info(f"Validation loss: {val_loss:.6f}")
+
+            # Save checkpoint
+            if (epoch + 1) % self.save_every == 0:
+                self.save_checkpoint(epoch, train_loss, val_loss)
+
+        # Save final model
+        self.save_final_model()
+
+        self.logger.info("Training completed!")
