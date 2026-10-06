@@ -57,3 +57,50 @@ class WAFConfig:
     max_anomaly_threshold: float = float(
         os.getenv("WAF_MAX_ANOMALY_THRESHOLD", "0.95")
     )
+
+    # Training Configuration
+    batch_size: int = int(os.getenv("WAF_BATCH_SIZE", "64"))
+    learning_rate: float = float(os.getenv("WAF_LEARNING_RATE", "2e-5"))
+    num_epochs: int = int(os.getenv("WAF_NUM_EPOCHS", "10"))
+    fine_tune_epochs: int = int(os.getenv("WAF_FINE_TUNE_EPOCHS", "3"))
+    warmup_steps: int = int(os.getenv("WAF_WARMUP_STEPS", "500"))
+    weight_decay: float = float(os.getenv("WAF_WEIGHT_DECAY", "0.01"))
+    gradient_accumulation_steps: int = int(
+        os.getenv("WAF_GRAD_ACCUM_STEPS", "1")
+    )
+
+    # Data Configuration
+    train_data_dir: str = os.getenv("WAF_TRAIN_DATA_DIR", "./data/benign_logs")
+    validation_split: float = float(os.getenv("WAF_VALIDATION_SPLIT", "0.1"))
+    max_train_samples: Optional[int] = None  # None = use all
+
+    # API Configuration
+    api_host: str = os.getenv("WAF_API_HOST", "0.0.0.0")
+    api_port: int = int(os.getenv("WAF_API_PORT", "8000"))
+    api_workers: int = int(os.getenv("WAF_API_WORKERS", "4"))
+    api_timeout: int = int(os.getenv("WAF_API_TIMEOUT", "30"))
+
+    # Inference Configuration
+    inference_batch_size: int = int(
+        os.getenv("WAF_INFERENCE_BATCH_SIZE", "32")
+    )
+    max_concurrent_requests: int = int(
+        os.getenv("WAF_MAX_CONCURRENT_REQUESTS", "100")
+    )
+    inference_timeout: float = float(os.getenv("WAF_INFERENCE_TIMEOUT", "5.0"))
+
+    # Logging Configuration
+    log_level: str = os.getenv("WAF_LOG_LEVEL", "INFO")
+    log_file: Optional[str] = os.getenv("WAF_LOG_FILE", None)
+    log_json: bool = os.getenv("WAF_LOG_JSON", "true").lower() == "true"
+    alert_log_file: str = os.getenv(
+        "WAF_ALERT_LOG_FILE",
+        "./logs/alerts.jsonl"
+    )
+
+    # Storage Configuration
+    checkpoint_dir: str = os.getenv("WAF_CHECKPOINT_DIR", "./checkpoints")
+    save_every_n_epochs: int = int(os.getenv("WAF_SAVE_EVERY_N_EPOCHS", "1"))
+    keep_last_n_checkpoints: int = int(
+        os.getenv("WAF_KEEP_LAST_N_CHECKPOINTS", "3")
+    )
