@@ -104,3 +104,86 @@ class WAFConfig:
     keep_last_n_checkpoints: int = int(
         os.getenv("WAF_KEEP_LAST_N_CHECKPOINTS", "3")
     )
+
+    # Normalization Patterns
+    normalize_ip: bool = (
+        os.getenv("WAF_NORMALIZE_IP", "true").lower() == "true"
+    )
+    normalize_timestamp: bool = (
+        os.getenv("WAF_NORMALIZE_TIMESTAMP", "true").lower() == "true"
+    )
+    normalize_session_ids: bool = (
+        os.getenv("WAF_NORMALIZE_SESSION_IDS", "true").lower() == "true"
+    )
+    normalize_uuids: bool = (
+        os.getenv("WAF_NORMALIZE_UUIDS", "true").lower() == "true"
+    )
+    normalize_hashes: bool = (
+        os.getenv("WAF_NORMALIZE_HASHES", "true").lower() == "true"
+    )
+    normalize_numbers: bool = (
+        os.getenv("WAF_NORMALIZE_NUMBERS", "true").lower() == "true"
+    )
+
+    # Performance
+    use_mixed_precision: bool = (
+        os.getenv("WAF_USE_MIXED_PRECISION", "false").lower() == "true"
+    )
+    num_dataloader_workers: int = int(
+        os.getenv("WAF_NUM_DATALOADER_WORKERS", "4")
+    )
+    pin_memory: bool = os.getenv("WAF_PIN_MEMORY", "true").lower() == "true"
+
+    # Security
+    enable_api_auth: bool = (
+        os.getenv("WAF_ENABLE_API_AUTH", "false").lower() == "true"
+    )
+    api_key: Optional[str] = os.getenv("WAF_API_KEY", None)
+
+    def __post_init__(self):
+        """Create necessary directories"""
+        Path(self.model_path).mkdir(parents=True, exist_ok=True)
+        Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.train_data_dir).mkdir(parents=True, exist_ok=True)
+
+        if self.alert_log_file:
+            Path(self.alert_log_file).parent.mkdir(parents=True, exist_ok=True)
+
+        if self.log_file:
+            Path(self.log_file).parent.mkdir(parents=True, exist_ok=True)
+
+    def to_dict(self) -> dict:
+        """Convert config to dictionary (for logging/serialization)"""
+        return {
+            k: v for k, v in self.__dict__.items()
+            if not k.startswith('_') and k != 'api_key'  # Don't expose API key
+        }
+
+    @classmethod
+    def from_env(cls) -> "WAFConfig":
+        """Create config from environment variables"""
+        return cls()
+
+
+# Global configuration instance
+config = WAFConfig.from_env()
+
+
+def get_config() -> WAFConfig:
+    """Get the global configuration instance"""
+    return config
+
+
+def reload_config() -> WAFConfig:
+    """Reload configuration from environment"""
+    global config
+    config = WAFConfig.from_env()
+    return config
+
+
+if __name__ == "__main__":
+    # Display current configuration
+    import json
+    cfg = get_config()
+    print("Current WAF Configuration:")
+    print(json.dumps(cfg.to_dict(), indent=2))
