@@ -181,3 +181,215 @@ class Trainer:
         self.save_final_model()
 
         self.logger.info("Training completed!")
+
+    def validate(self) -> float:
+        """Validate the model"""
+        self.model.eval()
+        total_loss = 0.0
+        num_batches = 0
+
+        with torch.no_grad():
+            for batch in tqdm(self.val_dataloader, desc="Validating"):
+                # Move to device
+                input_ids = batch["input_ids"].to(self.device)
+                attention_mask = batch["attention_mask"].to(self.device)
+                labels = batch["labels"].to(self.device)
+
+                # Forward pass
+                output = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+
+                total_loss += output.loss.item()
+                num_batches += 1
+
+        avg_loss = total_loss / num_batches
+
+        # Save best model
+        if avg_loss < self.best_val_loss:
+            self.best_val_loss = avg_loss
+            self.save_checkpoint(
+                self.current_epoch,
+                None,
+                avg_loss,
+                is_best=True
+            )
+
+        return avg_loss
+
+    def save_checkpoint(
+        self,
+        epoch: int,
+        train_loss: Optional[float],
+        val_loss: Optional[float],
+        is_best: bool = False
+    ):
+        """Save training checkpoint"""
+        checkpoint_name = "best_model.pt" if is_best else f"checkpoint_epoch_{epoch + 1}.pt"
+        checkpoint_path = self.save_dir / checkpoint_name
+
+        torch.save({
+            "epoch": epoch,
+            "global_step": self.global_step,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "best_val_loss": self.best_val_loss,
+        }, checkpoint_path)
+
+        self.logger.info(f"Saved checkpoint: {checkpoint_path}")
+
+    def save_final_model(self):
+        """Save final trained model"""
+        model_path = self.save_dir.parent / "waf_transformer"
+        self.model.save_pretrained(str(model_path))
+        self.logger.info(f"Saved final model: {model_path}")
+
+
+def load_and_prepare_data(
+    log_dir: str,
+    max_samples: Optional[int] = None
+) -> List[str]:
+    """
+    Load and prepare training data from access logs.
+
+    Args:
+        log_dir: Directory containing access logs
+        max_samples: Maximum number of samples to load
+
+    Returns:
+        List of normalized request texts
+    """
+    logger = setup_logger()
+    logger.info(f"Loading data from: {log_dir}")
+
+    # Initialize parser and normalizer
+    parser = AccessLogParser()
+    normalizer = RequestNormalizer()
+
+    # Find all log files
+    log_files = list(Path(log_dir).rglob("*.log"))
+    logger.info(f"Found {len(log_files)} log files")
+
+    # Parse all logs
+    all_requests = []
+    for log_file in tqdm(log_files, desc="Parsing logs"):
+        try:
+            parsed = parser.parse_file(str(log_file))
+            all_requests.extend(parsed)
+        except Exception as e:
+            logger.warning(f"Failed to parse {log_file}: {e}")
+
+    logger.info(f"Parsed {len(all_requests)} requests")
+
+    # Normalize
+    normalized_texts = []
+    for req in tqdm(all_requests, desc="Normalizing"):
+        norm = normalizer.normalize(
+            method=req.method,
+            path=req.path,
+            query_string=req.query_string,
+            headers=req.headers
+        )
+        normalized_texts.append(norm.normalized_text)
+
+    # Limit samples if specified
+    if max_samples and len(normalized_texts) > max_samples:
+        normalized_texts = normalized_texts[:max_samples]
+        logger.info(f"Limited to {max_samples} samples")
+
+    logger.info(f"Prepared {len(normalized_texts)} normalized requests")
+
+    return normalized_texts
+
+
+def main():
+    """Main training function"""
+    parser = argparse.ArgumentParser(description="Train Transformer WAF")
+    parser.add_argument("--log-dir", type=str, required=True, help="Directory with access logs")
+    parser.add_argument("--output-dir", type=str, default="./models/waf_transformer", help="Output directory")
+    parser.add_argument("--model-name", type=str, default="distilbert-base-uncased", help="Base model name")
+    parser.add_argument("--max-length", type=int, default=128, help="Max sequence length")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
+    parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate")
+    parser.add_argument("--val-split", type=float, default=0.1, help="Validation split")
+    parser.add_argument("--max-samples", type=int, default=None, help="Max samples to use")
+    parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
+    args = parser.parse_args()
+
+    # Setup logger
+    logger = setup_logger()
+    logger.info("Starting WAF training", args=vars(args))
+
+    # Load data
+    texts = load_and_prepare_data(args.log_dir, args.max_samples)
+
+    # Split train/val
+    val_size = int(len(texts) * args.val_split)
+    train_texts = texts[:-val_size] if val_size > 0 else texts
+    val_texts = texts[-val_size:] if val_size > 0 else []
+
+    logger.info(f"Train samples: {len(train_texts)}, Val samples: {len(val_texts)}")
+
+    # Create tokenizer
+    tokenizer = WAFTokenizer(model_name=args.model_name, max_length=args.max_length)
+
+    # Create datasets
+    train_dataset = HTTPRequestDataset(train_texts, tokenizer, args.max_length)
+    val_dataset = HTTPRequestDataset(val_texts, tokenizer, args.max_length) if val_texts else None
+
+    # Create dataloaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    val_loader = None
+    if val_dataset:
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True
+        )
+
+    # Create model
+    model = TransformerAutoencoder(
+        model_name=args.model_name,
+        vocab_size=tokenizer.get_vocab_size()
+    )
+
+    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # Create trainer
+    trainer = Trainer(
+        model=model,
+        train_dataloader=train_loader,
+        val_dataloader=val_loader,
+        learning_rate=args.lr,
+        num_epochs=args.epochs,
+        device=args.device,
+        save_dir=os.path.join(args.output_dir, "checkpoints")
+    )
+
+    # Train
+    trainer.train()
+
+    # Save tokenizer
+    tokenizer.save(args.output_dir)
+    logger.info(f"Saved tokenizer to {args.output_dir}")
+
+    logger.info("Training complete!")
+
+
+if __name__ == "__main__":
+    main()
