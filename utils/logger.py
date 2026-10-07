@@ -139,3 +139,119 @@ class WAFLogger:
         """Internal logging method with extra fields"""
         extra = {"extra_fields": kwargs} if kwargs else {}
         self.logger.log(level, message, extra=extra)
+
+
+    
+    def log_anomaly(
+        self,
+        anomaly_score: float,
+        threshold: float,
+        request_data: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Log an anomaly detection event.
+
+        Args:
+            anomaly_score: Computed anomaly score
+            threshold: Threshold used for detection
+            request_data: HTTP request details
+            metadata: Additional metadata
+        """
+        if not self.alert_logger:
+            return
+
+        alert_data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": "anomaly_detected",
+            "anomaly_score": round(anomaly_score, 4),
+            "threshold": threshold,
+            "is_anomalous": anomaly_score >= threshold,
+            "request": request_data,
+        }
+
+        if metadata:
+            alert_data["metadata"] = metadata
+
+        # Log as JSON
+        self.alert_logger.info(json.dumps(alert_data))
+
+    def log_metric(
+        self,
+        metric_name: str,
+        value: float,
+        unit: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None
+    ):
+        """
+        Log a metric.
+
+        Args:
+            metric_name: Metric name
+            value: Metric value
+            unit: Unit of measurement
+            tags: Additional tags
+        """
+        metric_data = {
+            "metric": metric_name,
+            "value": round(value, 4),
+        }
+
+        if unit:
+            metric_data["unit"] = unit
+        if tags:
+            metric_data["tags"] = tags
+
+        self.info(f"Metric: {metric_name}", **metric_data)
+
+    def log_training_progress(
+        self,
+        epoch: int,
+        total_epochs: int,
+        loss: float,
+        learning_rate: float,
+        samples_processed: int
+    ):
+        """
+        Log training progress.
+
+        Args:
+            epoch: Current epoch
+            total_epochs: Total epochs
+            loss: Training loss
+            learning_rate: Learning rate
+            samples_processed: Samples processed
+        """
+        self.info(
+            f"Training progress: Epoch {epoch}/{total_epochs}",
+            epoch=epoch,
+            total_epochs=total_epochs,
+            loss=round(loss, 6),
+            learning_rate=learning_rate,
+            samples_processed=samples_processed
+        )
+
+    def log_inference_stats(
+        self,
+        requests_processed: int,
+        avg_latency_ms: float,
+        anomalies_detected: int,
+        avg_score: float
+    ):
+        """
+        Log inference statistics.
+
+        Args:
+            requests_processed: Number of requests processed
+            avg_latency_ms: Average latency in milliseconds
+            anomalies_detected: Number of anomalies detected
+            avg_score: Average anomaly score
+        """
+        self.info(
+            "Inference statistics",
+            requests_processed=requests_processed,
+            avg_latency_ms=round(avg_latency_ms, 2),
+            anomalies_detected=anomalies_detected,
+            avg_score=round(avg_score, 4),
+            detection_rate=round(anomalies_detected / max(requests_processed, 1), 4)
+        )    
