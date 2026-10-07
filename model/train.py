@@ -249,3 +249,60 @@ class Trainer:
         self.model.save_pretrained(str(model_path))
         self.logger.info(f"Saved final model: {model_path}")
 
+
+def load_and_prepare_data(
+    log_dir: str,
+    max_samples: Optional[int] = None
+) -> List[str]:
+    """
+    Load and prepare training data from access logs.
+
+    Args:
+        log_dir: Directory containing access logs
+        max_samples: Maximum number of samples to load
+
+    Returns:
+        List of normalized request texts
+    """
+    logger = setup_logger()
+    logger.info(f"Loading data from: {log_dir}")
+
+    # Initialize parser and normalizer
+    parser = AccessLogParser()
+    normalizer = RequestNormalizer()
+
+    # Find all log files
+    log_files = list(Path(log_dir).rglob("*.log"))
+    logger.info(f"Found {len(log_files)} log files")
+
+    # Parse all logs
+    all_requests = []
+    for log_file in tqdm(log_files, desc="Parsing logs"):
+        try:
+            parsed = parser.parse_file(str(log_file))
+            all_requests.extend(parsed)
+        except Exception as e:
+            logger.warning(f"Failed to parse {log_file}: {e}")
+
+    logger.info(f"Parsed {len(all_requests)} requests")
+
+    # Normalize
+    normalized_texts = []
+    for req in tqdm(all_requests, desc="Normalizing"):
+        norm = normalizer.normalize(
+            method=req.method,
+            path=req.path,
+            query_string=req.query_string,
+            headers=req.headers
+        )
+        normalized_texts.append(norm.normalized_text)
+
+    # Limit samples if specified
+    if max_samples and len(normalized_texts) > max_samples:
+        normalized_texts = normalized_texts[:max_samples]
+        logger.info(f"Limited to {max_samples} samples")
+
+    logger.info(f"Prepared {len(normalized_texts)} normalized requests")
+
+    return normalized_texts
+
