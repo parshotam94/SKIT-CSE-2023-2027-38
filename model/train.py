@@ -306,3 +306,90 @@ def load_and_prepare_data(
 
     return normalized_texts
 
+
+def main():
+    """Main training function"""
+    parser = argparse.ArgumentParser(description="Train Transformer WAF")
+    parser.add_argument("--log-dir", type=str, required=True, help="Directory with access logs")
+    parser.add_argument("--output-dir", type=str, default="./models/waf_transformer", help="Output directory")
+    parser.add_argument("--model-name", type=str, default="distilbert-base-uncased", help="Base model name")
+    parser.add_argument("--max-length", type=int, default=128, help="Max sequence length")
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
+    parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate")
+    parser.add_argument("--val-split", type=float, default=0.1, help="Validation split")
+    parser.add_argument("--max-samples", type=int, default=None, help="Max samples to use")
+    parser.add_argument("--device", type=str, default="cuda", help="Device (cuda/cpu)")
+    args = parser.parse_args()
+
+    # Setup logger
+    logger = setup_logger()
+    logger.info("Starting WAF training", args=vars(args))
+
+    # Load data
+    texts = load_and_prepare_data(args.log_dir, args.max_samples)
+
+    # Split train/val
+    val_size = int(len(texts) * args.val_split)
+    train_texts = texts[:-val_size] if val_size > 0 else texts
+    val_texts = texts[-val_size:] if val_size > 0 else []
+
+    logger.info(f"Train samples: {len(train_texts)}, Val samples: {len(val_texts)}")
+
+    # Create tokenizer
+    tokenizer = WAFTokenizer(model_name=args.model_name, max_length=args.max_length)
+
+    # Create datasets
+    train_dataset = HTTPRequestDataset(train_texts, tokenizer, args.max_length)
+    val_dataset = HTTPRequestDataset(val_texts, tokenizer, args.max_length) if val_texts else None
+
+    # Create dataloaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    val_loader = None
+    if val_dataset:
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True
+        )
+
+    # Create model
+    model = TransformerAutoencoder(
+        model_name=args.model_name,
+        vocab_size=tokenizer.get_vocab_size()
+    )
+
+    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # Create trainer
+    trainer = Trainer(
+        model=model,
+        train_dataloader=train_loader,
+        val_dataloader=val_loader,
+        learning_rate=args.lr,
+        num_epochs=args.epochs,
+        device=args.device,
+        save_dir=os.path.join(args.output_dir, "checkpoints")
+    )
+
+    # Train
+    trainer.train()
+
+    # Save tokenizer
+    tokenizer.save(args.output_dir)
+    logger.info(f"Saved tokenizer to {args.output_dir}")
+
+    logger.info("Training complete!")
+
+
+if __name__ == "__main__":
+    main()
