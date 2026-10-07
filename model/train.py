@@ -181,3 +181,71 @@ class Trainer:
         self.save_final_model()
 
         self.logger.info("Training completed!")
+
+    def validate(self) -> float:
+        """Validate the model"""
+        self.model.eval()
+        total_loss = 0.0
+        num_batches = 0
+
+        with torch.no_grad():
+            for batch in tqdm(self.val_dataloader, desc="Validating"):
+                # Move to device
+                input_ids = batch["input_ids"].to(self.device)
+                attention_mask = batch["attention_mask"].to(self.device)
+                labels = batch["labels"].to(self.device)
+
+                # Forward pass
+                output = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+
+                total_loss += output.loss.item()
+                num_batches += 1
+
+        avg_loss = total_loss / num_batches
+
+        # Save best model
+        if avg_loss < self.best_val_loss:
+            self.best_val_loss = avg_loss
+            self.save_checkpoint(
+                self.current_epoch,
+                None,
+                avg_loss,
+                is_best=True
+            )
+
+        return avg_loss
+
+    def save_checkpoint(
+        self,
+        epoch: int,
+        train_loss: Optional[float],
+        val_loss: Optional[float],
+        is_best: bool = False
+    ):
+        """Save training checkpoint"""
+        checkpoint_name = "best_model.pt" if is_best else f"checkpoint_epoch_{epoch + 1}.pt"
+        checkpoint_path = self.save_dir / checkpoint_name
+
+        torch.save({
+            "epoch": epoch,
+            "global_step": self.global_step,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "best_val_loss": self.best_val_loss,
+        }, checkpoint_path)
+
+        self.logger.info(f"Saved checkpoint: {checkpoint_path}")
+
+    def save_final_model(self):
+        """Save final trained model"""
+        model_path = self.save_dir.parent / "waf_transformer"
+        self.model.save_pretrained(str(model_path))
+        self.logger.info(f"Saved final model: {model_path}")
+
