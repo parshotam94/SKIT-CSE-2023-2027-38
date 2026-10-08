@@ -255,3 +255,79 @@ class WAFLogger:
             avg_score=round(avg_score, 4),
             detection_rate=round(anomalies_detected / max(requests_processed, 1), 4)
         )    
+
+        
+# Global logger instance
+_logger: Optional[WAFLogger] = None
+
+
+def setup_logger(
+    name: str = "transformer_waf",
+    level: str = "INFO",
+    log_file: Optional[str] = None,
+    json_format: bool = True,
+    alert_log_file: Optional[str] = None
+) -> WAFLogger:
+    """
+    Set up the global WAF logger.
+
+    Args:
+        name: Logger name
+        level: Log level
+        log_file: Path to log file
+        json_format: Use JSON formatting
+        alert_log_file: Path to alert log file
+
+    Returns:
+        Configured WAFLogger instance
+    """
+    global _logger
+    _logger = WAFLogger(
+        name=name,
+        level=level,
+        log_file=log_file,
+        json_format=json_format,
+        alert_log_file=alert_log_file
+    )
+    return _logger
+
+
+def get_logger() -> WAFLogger:
+    """
+    Get the global logger instance.
+
+    Raises:
+        RuntimeError: If logger hasn't been set up
+    """
+    if _logger is None:
+        # Auto-setup with defaults
+        return setup_logger()
+    return _logger
+
+
+if __name__ == "__main__":
+    # Demo logging
+    logger = setup_logger(
+        level="DEBUG",
+        json_format=True,
+        alert_log_file="./logs/alerts.jsonl"
+    )
+
+    logger.debug("Debug message", component="test")
+    logger.info("System started", version="1.0.0")
+    logger.warning("High memory usage", memory_mb=1024)
+    logger.error("Connection failed", host="localhost", port=8000)
+
+    logger.log_anomaly(
+        anomaly_score=0.89,
+        threshold=0.75,
+        request_data={
+            "method": "POST",
+            "path": "/admin/shell.php",
+            "ip": "192.168.1.100"
+        }
+    )
+
+    logger.log_metric("inference_latency", 15.3, unit="ms", tags={"model": "v1"})
+    logger.log_training_progress(5, 10, 0.234, 2e-5, 10000)
+    logger.log_inference_stats(1000, 18.5, 23, 0.34)
