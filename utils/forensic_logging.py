@@ -190,3 +190,78 @@ class ForensicLogger:
             f.write(json.dumps(incident.to_dict()) + '\n')
 
         return incident
+
+    def get_incidents(
+        self,
+        date: Optional[str] = None,
+        severity: Optional[str] = None,
+        limit: int = 100
+    ) -> list:
+        """
+        Retrieve logged incidents
+
+        Args:
+            date: Date string (YYYYMMDD), None for today
+            severity: Filter by severity level
+            limit: Maximum incidents to return
+
+        Returns:
+            List of incidents
+        """
+        if date is None:
+            date = datetime.now(timezone.utc).strftime('%Y%m%d')
+
+        log_file = self.log_dir / f"incidents_{date}.jsonl"
+
+        if not log_file.exists():
+            return []
+
+        incidents = []
+
+        with open(log_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    incident = json.loads(line.strip())
+
+                    # Apply severity filter
+                    if severity and incident.get('severity') != severity:
+                        continue
+
+                    incidents.append(incident)
+
+                    if len(incidents) >= limit:
+                        break
+
+                except json.JSONDecodeError:
+                    continue
+
+        return incidents
+
+    def export_incidents(
+        self,
+        date: str,
+        output_file: str,
+        severity: Optional[str] = None
+    ):
+        """
+        Export incidents to file for reporting
+
+        Args:
+            date: Date string (YYYYMMDD)
+            output_file: Output file path
+            severity: Filter by severity
+        """
+        incidents = self.get_incidents(date=date, severity=severity, limit=10000)
+
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'date': date,
+                'total_incidents': len(incidents),
+                'severity_filter': severity,
+                'incidents': incidents
+            }, f, indent=2)
+
+        return len(incidents)
