@@ -180,3 +180,60 @@ class SupervisedTrainer:
         accuracy = correct / total
 
         return {"loss": avg_loss, "accuracy": accuracy}
+
+    def validate_epoch(self, epoch: int) -> dict:
+        """
+        Validate for one epoch.
+
+        Returns:
+            Dictionary with validation metrics
+        """
+        self.model.eval()
+        total_loss = 0.0
+        correct = 0
+        total = 0
+        all_predictions = []
+        all_labels = []
+
+        progress_bar = tqdm(
+            self.val_dataloader,
+            desc=f"Epoch {epoch + 1}/{self.num_epochs} [Val]",
+        )
+
+        with torch.no_grad():
+            for batch in progress_bar:
+                input_ids = batch["input_ids"].to(self.device)
+                attention_mask = batch["attention_mask"].to(self.device)
+                labels = batch["labels"].to(self.device)
+
+                # Forward pass
+                output = self.model(
+                    input_ids, attention_mask, labels, return_dict=False
+                )
+                logits, probabilities, predicted_classes, confidences, loss = (
+                    output
+                )
+
+                # Track metrics
+                total_loss += loss.item()
+                correct += (predicted_classes == labels).sum().item()
+                total += labels.size(0)
+
+                all_predictions.extend(predicted_classes.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+
+        avg_loss = total_loss / len(self.val_dataloader)
+        accuracy = correct / total
+
+        # Compute additional metrics
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            all_labels, all_predictions, average="weighted", zero_division=0
+        )
+
+        return {
+            "loss": avg_loss,
+            "accuracy": accuracy,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+        }
