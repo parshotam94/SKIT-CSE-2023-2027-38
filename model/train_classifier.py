@@ -237,3 +237,58 @@ class SupervisedTrainer:
             "recall": recall,
             "f1": f1,
         }
+
+    def train(self):
+        """
+        Run full training loop.
+        """
+        self.logger.info(f"Starting training for {self.num_epochs} epochs")
+        self.logger.info(f"Device: {self.device}")
+        self.logger.info(
+            f"Training samples: {len(self.train_dataloader.dataset)}"
+        )
+        self.logger.info(
+            f"Validation samples: {len(self.val_dataloader.dataset)}"
+        )
+
+        for epoch in range(self.num_epochs):
+            # Train
+            train_metrics = self.train_epoch(epoch)
+            self.train_losses.append(train_metrics["loss"])
+
+            # Validate
+            val_metrics = self.validate_epoch(epoch)
+            self.val_losses.append(val_metrics["loss"])
+            self.val_accuracies.append(val_metrics["accuracy"])
+
+            # Log metrics
+            self.logger.info(f"\nEpoch {epoch + 1}/{self.num_epochs}:")
+            self.logger.info(
+                f"  Train Loss: {train_metrics['loss']:.4f}, Train Acc: {train_metrics['accuracy']:.4f}"
+            )
+            self.logger.info(
+                f"  Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.4f}"
+            )
+            self.logger.info(
+                f"  Val Precision: {val_metrics['precision']:.4f}, Val Recall: {val_metrics['recall']:.4f}, Val F1: {val_metrics['f1']:.4f}"
+            )
+
+            # Save best model
+            if val_metrics["accuracy"] > self.best_val_accuracy:
+                self.best_val_accuracy = val_metrics["accuracy"]
+                self.save_checkpoint(epoch, val_metrics, is_best=True)
+                self.logger.info(
+                    f"  ✓ Saved best model (accuracy: {val_metrics['accuracy']:.4f})"
+                )
+
+            # Save regular checkpoint
+            if (epoch + 1) % 5 == 0:
+                self.save_checkpoint(epoch, val_metrics, is_best=False)
+
+        self.logger.info(
+            f"\nTraining complete! Best validation accuracy: {self.best_val_accuracy:.4f}"
+        )
+
+        # Evaluate on test set
+        test_metrics = self.evaluate()
+        return test_metrics
