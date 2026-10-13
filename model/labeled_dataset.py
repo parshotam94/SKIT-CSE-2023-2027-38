@@ -470,5 +470,109 @@ def classify_attack_type(request_text: str) -> int:
     # Default: UNKNOWN_ATTACK
     return 11
 
+def generate_synthetic_attacks(
+    num_samples: int = 1000,
+    attack_types: Optional[List[int]] = None
+) -> List[Dict]:
+    """
+    Generate synthetic attack samples for training.
+
+    Args:
+        num_samples: Number of samples to generate
+        attack_types: List of attack class IDs to generate (None = all)
+
+    Returns:
+        List of synthetic attack dictionaries
+    """
+    if attack_types is None:
+        attack_types = list(range(1, 12))  # All attack types except BENIGN
+
+    synthetic_data = []
+
+    # Attack templates
+    templates = {
+        1: [  # SQL_INJECTION
+            "GET /login?username=admin' OR '1'='1&password=x HTTP/1.1",
+            "POST /search?q=1' UNION SELECT NULL,username,password FROM users-- HTTP/1.1",
+            "GET /product?id=1'; DROP TABLE products;-- HTTP/1.1"
+        ],
+        2: [  # XSS
+            "GET /search?q=<script>alert('XSS')</script> HTTP/1.1",
+            "POST /comment?text=<img src=x onerror=alert(1)> HTTP/1.1",
+            "GET /page?name=<svg onload=alert('XSS')> HTTP/1.1"
+        ],
+        3: [  # PATH_TRAVERSAL
+            "GET /download?file=../../../../etc/passwd HTTP/1.1",
+            "GET /view?doc=..\\..\\..\\windows\\system.ini HTTP/1.1",
+            "POST /read?path=%2e%2e%2f%2e%2e%2fetc%2fpasswd HTTP/1.1"
+        ],
+        4: [  # COMMAND_INJECTION
+            "GET /ping?host=127.0.0.1; cat /etc/passwd HTTP/1.1",
+            "POST /exec?cmd=whoami && cat /etc/shadow HTTP/1.1",
+            "GET /run?cmd=`cat /etc/passwd` HTTP/1.1"
+        ]
+    }
+
+    samples_per_type = num_samples // len(attack_types)
+
+    for attack_class in attack_types:
+        if attack_class in templates:
+            base_templates = templates[attack_class]
+            for i in range(samples_per_type):
+                # Generate variations
+                template = base_templates[i % len(base_templates)]
+                synthetic_data.append({
+                    'request': template,
+                    'label': attack_class,
+                    'label_name': CLASS_LABELS[attack_class],
+                    'source': 'synthetic'
+                })
+
+    return synthetic_data
+
+
+def create_balanced_dataset(
+    datasets: List[List[Dict]],
+    target_samples_per_class: int = 1000
+) -> List[Dict]:
+    """
+    Create balanced dataset by sampling from multiple sources.
+
+    Args:
+        datasets: List of dataset lists
+        target_samples_per_class: Target number of samples per class
+
+    Returns:
+        Balanced dataset
+    """
+    # Merge all datasets
+    all_data = []
+    for dataset in datasets:
+        all_data.extend(dataset)
+
+    # Group by class
+    class_data = {}
+    for item in all_data:
+        label = item['label'] if isinstance(item['label'], int) else LABEL_TO_CLASS.get(item['label'], 11)
+        if label not in class_data:
+            class_data[label] = []
+        class_data[label].append(item)
+
+    # Balance classes
+    balanced_data = []
+    for class_id in class_data:
+        samples = class_data[class_id]
+        if len(samples) >= target_samples_per_class:
+            # Undersample
+            balanced_data.extend(np.random.choice(samples, target_samples_per_class, replace=False))
+        else:
+            # Oversample
+            balanced_data.extend(samples)
+            # Repeat samples to reach target
+            remaining = target_samples_per_class - len(samples)
+            balanced_data.extend(np.random.choice(samples, remaining, replace=True))
+
+    np.random.shuffle(balanced_data)
+    return balanced_data
 
 
