@@ -292,3 +292,88 @@ class SupervisedTrainer:
         # Evaluate on test set
         test_metrics = self.evaluate()
         return test_metrics
+
+    def evaluate(self) -> dict:
+        """
+        Evaluate on test set.
+
+        Returns:
+            Dictionary with test metrics and classification report
+        """
+        self.logger.info("Evaluating on test set...")
+
+        self.model.eval()
+        all_predictions = []
+        all_labels = []
+        all_probabilities = []
+
+        with torch.no_grad():
+            for batch in tqdm(self.test_dataloader, desc="Testing"):
+                input_ids = batch["input_ids"].to(self.device)
+                attention_mask = batch["attention_mask"].to(self.device)
+                labels = batch["labels"]
+
+                output = self.model(
+                    input_ids, attention_mask, return_dict=False
+                )
+                logits, probabilities, predicted_classes, confidences, _ = (
+                    output
+                )
+
+                all_predictions.extend(predicted_classes.cpu().numpy())
+                all_labels.extend(labels.numpy())
+                all_probabilities.extend(probabilities.cpu().numpy())
+
+        # Calculate metrics
+        accuracy = accuracy_score(all_labels, all_predictions)
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            all_labels, all_predictions, average="weighted", zero_division=0
+        )
+
+        # Confusion matrix
+        cm = confusion_matrix(all_labels, all_predictions)
+
+        # Per-class metrics
+        class_names = [CLASS_LABELS[i] for i in sorted(set(all_labels))]
+        class_report = classification_report(
+            all_labels,
+            all_predictions,
+            target_names=class_names,
+            digits=4,
+            zero_division=0,
+        )
+
+        # Print results
+        self.logger.info("\n" + "=" * 70)
+        self.logger.info("TEST SET EVALUATION RESULTS")
+        self.logger.info("=" * 70)
+        self.logger.info("\nOverall Metrics:")
+        self.logger.info(f"  Accuracy:  {accuracy:.4f}")
+        self.logger.info(f"  Precision: {precision:.4f}")
+        self.logger.info(f"  Recall:    {recall:.4f}")
+        self.logger.info(f"  F1-Score:  {f1:.4f}")
+
+        self.logger.info("\nPer-Class Performance:")
+        self.logger.info(f"\n{class_report}")
+
+        self.logger.info("\nConfusion Matrix:")
+        self.logger.info(f"\n{cm}")
+
+        # Save results
+        results = {
+            "accuracy": float(accuracy),
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
+            "confusion_matrix": cm.tolist(),
+            "class_report": class_report,
+        }
+
+        results_path = self.save_dir / "test_results.json"
+        with open(results_path, "w") as f:
+            json.dump(results, f, indent=2)
+
+        self.logger.info(f"\nResults saved to {results_path}")
+
+        return results
+
