@@ -145,3 +145,104 @@ class TransformerWAFClassifier(nn.Module):
 
         # Loss function
         self.loss_fn = nn.CrossEntropyLoss()
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        return_dict: bool = True
+    ) -> ClassificationOutput:
+        """
+        Forward pass.
+
+        Args:
+            input_ids: Token IDs [batch_size, seq_len]
+            attention_mask: Attention mask [batch_size, seq_len]
+            labels: Ground truth labels [batch_size] (optional)
+            return_dict: Return ClassificationOutput object
+
+        Returns:
+            ClassificationOutput with logits, probabilities, and predictions
+        """
+        # Encode
+        encoder_output = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            return_dict=True
+        )
+
+        # Pool: use first token representation
+        pooled_output = encoder_output.last_hidden_state[:, 0, :]
+
+        # Classify
+        logits = self.classifier(pooled_output)
+
+        # Compute probabilities
+        probabilities = F.softmax(logits, dim=-1)
+
+        # Get predictions
+        predicted_classes = torch.argmax(probabilities, dim=-1)
+        confidences = torch.max(probabilities, dim=-1).values
+
+        # Compute loss if labels provided
+        loss = None
+        if labels is not None:
+            loss = self.loss_fn(logits, labels)
+
+        if return_dict:
+            # Return first item in batch for single prediction
+            if logits.size(0) == 1:
+                return ClassificationOutput(
+                    logits=logits,
+                    probabilities=probabilities[0],
+                    predicted_class=predicted_classes[0].item(),
+                    predicted_label=CLASS_LABELS[
+                        predicted_classes[0].item()
+                    ],
+                    confidence=confidences[0].item(),
+                    loss=loss,
+                    hidden_states=encoder_output.last_hidden_state,
+                    attention_weights=(
+                        encoder_output.attentions
+                        if hasattr(encoder_output, 'attentions')
+                        else None
+                    )
+                )
+            else:
+                # Batch prediction
+                return {
+                    'logits': logits,
+                    'probabilities': probabilities,
+                    'predicted_classes': predicted_classes,
+                    'confidences': confidences,
+                    'loss': loss
+                }
+
+        return logits, probabilities, predicted_classes, confidences, loss
+
+    def predict(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None
+    ) -> ClassificationOutput:
+        """
+        Inference mode prediction.
+
+        Args:
+            input_ids: Token IDs
+            attention_mask: Attention mask
+
+        Returns:
+            ClassificationOutput with prediction details
+        """
+        self.eval()
+
+        with torch.no_grad():
+            output = self.forward(
+                input_ids,
+                attention_mask,
+                return_dict=True
+            )
+
+        return output    
