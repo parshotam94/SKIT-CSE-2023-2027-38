@@ -246,3 +246,101 @@ class TransformerWAFClassifier(nn.Module):
             )
 
         return output    
+    
+    def get_attack_severity(
+        self,
+        predicted_class: int,
+        confidence: float
+    ) -> str:
+        """
+        Determine attack severity.
+
+        Args:
+            predicted_class: Predicted class ID
+            confidence: Prediction confidence
+
+        Returns:
+            Severity level: low, medium, high, critical
+        """
+        if predicted_class == 0:  # BENIGN
+            return "none"
+
+        # Critical attacks
+        critical_attacks = [1, 4, 10]
+        if predicted_class in critical_attacks and confidence > 0.9:
+            return "critical"
+
+        # High severity
+        high_attacks = [1, 2, 4, 5, 6, 10]
+        if predicted_class in high_attacks and confidence > 0.75:
+            return "high"
+
+        # Medium severity
+        if confidence > 0.6:
+            return "medium"
+
+        return "low"
+
+    def explain_prediction(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        tokenizer=None
+    ) -> Dict:
+        """
+        Explain prediction with attention weights.
+
+        Args:
+            input_ids: Token IDs
+            attention_mask: Attention mask
+            tokenizer: Tokenizer for decoding tokens
+
+        Returns:
+            Dictionary with explanation details
+        """
+        self.eval()
+
+        with torch.no_grad():
+            output = self.forward(
+                input_ids,
+                attention_mask,
+                return_dict=True
+            )
+
+        explanation = {
+            'prediction': output.predicted_label,
+            'confidence': output.confidence,
+            'all_probabilities': output.to_dict()['probabilities']
+        }
+
+        # Add token-level attention if available
+        if output.attention_weights is not None and tokenizer is not None:
+            tokens = tokenizer.convert_ids_to_tokens(
+                input_ids[0].tolist()
+            )
+
+            # Average attention across layers and heads
+            avg_attention = (
+                output.attention_weights[-1]
+                .mean(dim=1)[0, 0]
+                .cpu()
+                .numpy()
+            )
+
+            token_importance = [
+                {
+                    'token': tokens[i],
+                    'importance': float(avg_attention[i])
+                }
+                for i in range(len(tokens))
+                if tokens[i] not in ['[PAD]', '[CLS]', '[SEP]']
+            ]
+
+            token_importance.sort(
+                key=lambda x: x['importance'],
+                reverse=True
+            )
+
+            explanation['important_tokens'] = token_importance[:10]
+
+        return explanation
