@@ -377,3 +377,29 @@ class SupervisedTrainer:
 
         return results
 
+    def save_checkpoint(
+        self, epoch: int, metrics: dict, is_best: bool = False
+    ):
+        """Save model checkpoint"""
+        checkpoint_name = (
+            "best_model.pt" if is_best else f"checkpoint_epoch_{epoch + 1}.pt"
+        )
+        checkpoint_path = self.save_dir / checkpoint_name
+
+        self.model.save_model(str(checkpoint_path))
+
+        # Save training history
+        history_path = self.save_dir / "training_history.json"
+        with open(history_path, "w") as f:
+            json.dump(
+                {
+                    "train_losses": self.train_losses,
+                    "val_losses": self.val_losses,
+                    "val_accuracies": self.val_accuracies,
+                    "best_val_accuracy": self.best_val_accuracy,
+                },
+                f,
+                indent=2,
+            )
+
+
