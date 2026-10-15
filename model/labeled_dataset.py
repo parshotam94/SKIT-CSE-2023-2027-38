@@ -149,3 +149,130 @@ class LabeledWAFDataset(Dataset):
                 if i in self.class_counts
             }
         }
+def load_csic2010_dataset(
+    dataset_path: str,
+    tokenizer: WAFTokenizer,
+    test_split: float = 0.2,
+    val_split: float = 0.1
+) -> Tuple[LabeledWAFDataset, LabeledWAFDataset, LabeledWAFDataset]:
+    """
+    Load CSIC 2010 HTTP dataset.
+
+    Args:
+        dataset_path: Path to CSIC2010 dataset directory
+        tokenizer: WAFTokenizer instance
+        test_split: Fraction for test set
+        val_split: Fraction for validation set
+
+    Returns:
+        Tuple of (train_dataset, val_dataset, test_dataset)
+    """
+    dataset_path = Path(dataset_path)
+
+    # Load normal traffic
+    normal_file = dataset_path / "normalTrafficTraining.txt"
+    anomalous_file = dataset_path / "anomalousTrafficTest.txt"
+
+    data = []
+
+    # Load benign requests
+    if normal_file.exists():
+        with open(normal_file, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            requests = content.split('\n\n')  # Requests separated by blank lines
+            for req in requests:
+                if req.strip():
+                    data.append({
+                        'request': req.strip(),
+                        'label': 0,  # BENIGN
+                        'label_name': 'BENIGN',
+                        'source': 'CSIC2010'
+                    })
+
+    # Load attack requests
+    if anomalous_file.exists():
+        with open(anomalous_file, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            requests = content.split('\n\n')
+            for req in requests:
+                if req.strip():
+                    # Auto-classify attack type based on patterns
+                    attack_class = classify_attack_type(req)
+                    data.append({
+                        'request': req.strip(),
+                        'label': attack_class,
+                        'label_name': CLASS_LABELS[attack_class],
+                        'source': 'CSIC2010'
+                    })
+
+    # Shuffle and split
+    np.random.shuffle(data)
+
+    total = len(data)
+    test_size = int(total * test_split)
+    val_size = int(total * val_split)
+    train_size = total - test_size - val_size
+
+    train_data = data[:train_size]
+    val_data = data[train_size:train_size + val_size]
+    test_data = data[train_size + val_size:]
+
+    # Create datasets
+    train_dataset = LabeledWAFDataset(train_data, tokenizer)
+    val_dataset = LabeledWAFDataset(val_data, tokenizer)
+    test_dataset = LabeledWAFDataset(test_data, tokenizer)
+
+    return train_dataset, val_dataset, test_dataset
+
+
+def load_json_dataset(
+    json_path: str,
+    tokenizer: WAFTokenizer,
+    test_split: float = 0.2,
+    val_split: float = 0.1
+) -> Tuple[LabeledWAFDataset, LabeledWAFDataset, LabeledWAFDataset]:
+    """
+    Load dataset from JSON file.
+
+    JSON Format:
+    [
+        {
+            "request": "GET /path?param=value HTTP/1.1...",
+            "label": 0 or "BENIGN",
+            "label_name": "BENIGN",
+            "metadata": {}
+        },
+        ...
+    ]
+
+    Args:
+        json_path: Path to JSON dataset file
+        tokenizer: WAFTokenizer instance
+        test_split: Fraction for test set
+        val_split: Fraction for validation set
+
+    Returns:
+        Tuple of (train_dataset, val_dataset, test_dataset)
+    """
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # Shuffle
+    np.random.shuffle(data)
+
+    # Split
+    total = len(data)
+    test_size = int(total * test_split)
+    val_size = int(total * val_split)
+    train_size = total - test_size - val_size
+
+    train_data = data[:train_size]
+    val_data = data[train_size:train_size + val_size]
+    test_data = data[train_size + val_size:]
+
+    # Create datasets
+    train_dataset = LabeledWAFDataset(train_data, tokenizer)
+    val_dataset = LabeledWAFDataset(val_data, tokenizer)
+    test_dataset = LabeledWAFDataset(test_data, tokenizer)
+
+    return train_dataset, val_dataset, test_dataset
