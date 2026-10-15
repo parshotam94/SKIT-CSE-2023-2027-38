@@ -255,7 +255,12 @@ class ClassificationDetector:
             "body": body
         }
 
-        normalized = self.normalizer.normalize(request_data)
+        normalized = self.normalizer.normalize(
+            method=request_data.get("method", "GET"),
+            path=request_data.get("path", "/"),
+            query_string=request_data.get("query", ""),
+            headers=request_data.get("headers", {}),
+        )
 
         # Create text representation
         text = f"{method} {path} {query_string} {body}"
