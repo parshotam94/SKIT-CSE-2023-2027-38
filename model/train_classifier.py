@@ -403,3 +403,169 @@ class SupervisedTrainer:
             )
 
 
+def main():
+    """Main training function"""
+    parser = argparse.ArgumentParser(description="Train WAF Classifier")
+    parser.add_argument(
+        "--data",
+        type=str,
+        required=True,
+        help="Path to labeled dataset (.json, .csv, or CSIC2010 directory)",
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="distilbert-base-uncased",
+        help="Pretrained model name",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=32, help="Batch size"
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=15, help="Number of epochs"
+    )
+    parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate")
+    parser.add_argument(
+        "--warmup-steps", type=int, default=500, help="Warmup steps"
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help="Device",
+    )
+    parser.add_argument(
+        "--save-dir",
+        type=str,
+        default="./models/waf_classifier",
+        help="Save directory",
+    )
+    parser.add_argument(
+        "--test-split", type=float, default=0.2, help="Test data fraction"
+    )
+    parser.add_argument(
+        "--val-split", type=float, default=0.1, help="Validation data fraction"
+    )
+    parser.add_argument(
+        "--add-synthetic",
+        action="store_true",
+        help="Add synthetic attack samples",
+    )
+    parser.add_argument(
+        "--synthetic-samples",
+        type=int,
+        default=1000,
+        help="Number of synthetic samples",
+    )
+
+    args = parser.parse_args()
+
+    # Setup logger
+    logger = setup_logger("TrainClassifier")
+    logger.info("Initializing training pipeline...")
+
+    # Initialize tokenizer
+    logger.info("Loading tokenizer...")
+    tokenizer = WAFTokenizer(model_name=args.model_name)
+
+    # Load dataset
+    logger.info(f"Loading dataset from {args.data}...")
+
+    if args.data.endswith(".json"):
+        train_dataset, val_dataset, test_dataset = load_json_dataset(
+            args.data,
+            tokenizer,
+            test_split=args.test_split,
+            val_split=args.val_split,
+        )
+    elif args.data.endswith(".csv"):
+        train_dataset, val_dataset, test_dataset = load_csv_dataset(
+            args.data,
+            tokenizer,
+            test_split=args.test_split,
+            val_split=args.val_split,
+        )
+    else:
+        # Assume CSIC2010 format
+        train_dataset, val_dataset, test_dataset = load_csic2010_dataset(
+            args.data,
+            tokenizer,
+            test_split=args.test_split,
+            val_split=args.val_split,
+        )
+
+    # Add synthetic data if requested
+    if args.add_synthetic:
+        logger.info(
+            f"Generating {args.synthetic_samples} synthetic attack samples..."
+        )
+        synthetic_data = generate_synthetic_attacks(
+            num_samples=args.synthetic_samples
+        )
+        # Add to training data
+        train_dataset.data.extend(synthetic_data)
+
+    # Print dataset statistics
+    logger.info("\nDataset Statistics:")
+    logger.info(f"  Training samples: {len(train_dataset)}")
+    logger.info(f"  Validation samples: {len(val_dataset)}")
+    logger.info(f"  Test samples: {len(test_dataset)}")
+
+    train_stats = train_dataset.get_statistics()
+    logger.info("\nTraining set class distribution:")
+    for class_name, count in train_stats["class_distribution"].items():
+        logger.info(f"  {class_name}: {count}")
+
+    # Create data loaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=0,  # Set to 0 for Windows compatibility
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0
+    )
+    test_loader = DataLoader(
+        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0
+    )
+
+    # Initialize model
+    logger.info(f"Initializing model: {args.model_name}")
+    model = TransformerWAFClassifier(
+        model_name=args.model_name, num_classes=12, dropout=0.3
+    )
+
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
+    logger.info(f"Total parameters: {total_params:,}")
+    logger.info(f"Trainable parameters: {trainable_params:,}")
+
+    # Initialize trainer
+    trainer = SupervisedTrainer(
+        model=model,
+        train_dataloader=train_loader,
+        val_dataloader=val_loader,
+        test_dataloader=test_loader,
+        learning_rate=args.lr,
+        num_epochs=args.epochs,
+        warmup_steps=args.warmup_steps,
+        device=args.device,
+        save_dir=args.save_dir,
+        use_class_weights=True,
+    )
+
+    # Train model
+    test_results = trainer.train()
+
+    logger.info("\nTraining pipeline complete!")
+    logger.info(f"Model saved to: {args.save_dir}")
+    logger.info(f"Test Accuracy: {test_results['accuracy']:.4f}")
+    logger.info(f"Test F1-Score: {test_results['f1']:.4f}")
+
+
+if __name__ == "__main__":
+    main()
