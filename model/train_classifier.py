@@ -292,3 +292,280 @@ class SupervisedTrainer:
         # Evaluate on test set
         test_metrics = self.evaluate()
         return test_metrics
+
+    def evaluate(self) -> dict:
+        """
+        Evaluate on test set.
+
+        Returns:
+            Dictionary with test metrics and classification report
+        """
+        self.logger.info("Evaluating on test set...")
+
+        self.model.eval()
+        all_predictions = []
+        all_labels = []
+        all_probabilities = []
+
+        with torch.no_grad():
+            for batch in tqdm(self.test_dataloader, desc="Testing"):
+                input_ids = batch["input_ids"].to(self.device)
+                attention_mask = batch["attention_mask"].to(self.device)
+                labels = batch["labels"]
+
+                output = self.model(
+                    input_ids, attention_mask, return_dict=False
+                )
+                logits, probabilities, predicted_classes, confidences, _ = (
+                    output
+                )
+
+                all_predictions.extend(predicted_classes.cpu().numpy())
+                all_labels.extend(labels.numpy())
+                all_probabilities.extend(probabilities.cpu().numpy())
+
+        # Calculate metrics
+        accuracy = accuracy_score(all_labels, all_predictions)
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            all_labels, all_predictions, average="weighted", zero_division=0
+        )
+
+        # Confusion matrix
+        cm = confusion_matrix(all_labels, all_predictions)
+
+        # Per-class metrics
+        class_names = [CLASS_LABELS[i] for i in sorted(set(all_labels))]
+        class_report = classification_report(
+            all_labels,
+            all_predictions,
+            target_names=class_names,
+            digits=4,
+            zero_division=0,
+        )
+
+        # Print results
+        self.logger.info("\n" + "=" * 70)
+        self.logger.info("TEST SET EVALUATION RESULTS")
+        self.logger.info("=" * 70)
+        self.logger.info("\nOverall Metrics:")
+        self.logger.info(f"  Accuracy:  {accuracy:.4f}")
+        self.logger.info(f"  Precision: {precision:.4f}")
+        self.logger.info(f"  Recall:    {recall:.4f}")
+        self.logger.info(f"  F1-Score:  {f1:.4f}")
+
+        self.logger.info("\nPer-Class Performance:")
+        self.logger.info(f"\n{class_report}")
+
+        self.logger.info("\nConfusion Matrix:")
+        self.logger.info(f"\n{cm}")
+
+        # Save results
+        results = {
+            "accuracy": float(accuracy),
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
+            "confusion_matrix": cm.tolist(),
+            "class_report": class_report,
+        }
+
+        results_path = self.save_dir / "test_results.json"
+        with open(results_path, "w") as f:
+            json.dump(results, f, indent=2)
+
+        self.logger.info(f"\nResults saved to {results_path}")
+
+        return results
+
+    def save_checkpoint(
+        self, epoch: int, metrics: dict, is_best: bool = False
+    ):
+        """Save model checkpoint"""
+        checkpoint_name = (
+            "best_model.pt" if is_best else f"checkpoint_epoch_{epoch + 1}.pt"
+        )
+        checkpoint_path = self.save_dir / checkpoint_name
+
+        self.model.save_model(str(checkpoint_path))
+
+        # Save training history
+        history_path = self.save_dir / "training_history.json"
+        with open(history_path, "w") as f:
+            json.dump(
+                {
+                    "train_losses": self.train_losses,
+                    "val_losses": self.val_losses,
+                    "val_accuracies": self.val_accuracies,
+                    "best_val_accuracy": self.best_val_accuracy,
+                },
+                f,
+                indent=2,
+            )
+
+
+def main():
+    """Main training function"""
+    parser = argparse.ArgumentParser(description="Train WAF Classifier")
+    parser.add_argument(
+        "--data",
+        type=str,
+        required=True,
+        help="Path to labeled dataset (.json, .csv, or CSIC2010 directory)",
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="distilbert-base-uncased",
+        help="Pretrained model name",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=32, help="Batch size"
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=15, help="Number of epochs"
+    )
+    parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate")
+    parser.add_argument(
+        "--warmup-steps", type=int, default=500, help="Warmup steps"
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        help="Device",
+    )
+    parser.add_argument(
+        "--save-dir",
+        type=str,
+        default="./models/waf_classifier",
+        help="Save directory",
+    )
+    parser.add_argument(
+        "--test-split", type=float, default=0.2, help="Test data fraction"
+    )
+    parser.add_argument(
+        "--val-split", type=float, default=0.1, help="Validation data fraction"
+    )
+    parser.add_argument(
+        "--add-synthetic",
+        action="store_true",
+        help="Add synthetic attack samples",
+    )
+    parser.add_argument(
+        "--synthetic-samples",
+        type=int,
+        default=1000,
+        help="Number of synthetic samples",
+    )
+
+    args = parser.parse_args()
+
+    # Setup logger
+    logger = setup_logger("TrainClassifier")
+    logger.info("Initializing training pipeline...")
+
+    # Initialize tokenizer
+    logger.info("Loading tokenizer...")
+    tokenizer = WAFTokenizer(model_name=args.model_name)
+
+    # Load dataset
+    logger.info(f"Loading dataset from {args.data}...")
+
+    if args.data.endswith(".json"):
+        train_dataset, val_dataset, test_dataset = load_json_dataset(
+            args.data,
+            tokenizer,
+            test_split=args.test_split,
+            val_split=args.val_split,
+        )
+    elif args.data.endswith(".csv"):
+        train_dataset, val_dataset, test_dataset = load_csv_dataset(
+            args.data,
+            tokenizer,
+            test_split=args.test_split,
+            val_split=args.val_split,
+        )
+    else:
+        # Assume CSIC2010 format
+        train_dataset, val_dataset, test_dataset = load_csic2010_dataset(
+            args.data,
+            tokenizer,
+            test_split=args.test_split,
+            val_split=args.val_split,
+        )
+
+    # Add synthetic data if requested
+    if args.add_synthetic:
+        logger.info(
+            f"Generating {args.synthetic_samples} synthetic attack samples..."
+        )
+        synthetic_data = generate_synthetic_attacks(
+            num_samples=args.synthetic_samples
+        )
+        # Add to training data
+        train_dataset.data.extend(synthetic_data)
+
+    # Print dataset statistics
+    logger.info("\nDataset Statistics:")
+    logger.info(f"  Training samples: {len(train_dataset)}")
+    logger.info(f"  Validation samples: {len(val_dataset)}")
+    logger.info(f"  Test samples: {len(test_dataset)}")
+
+    train_stats = train_dataset.get_statistics()
+    logger.info("\nTraining set class distribution:")
+    for class_name, count in train_stats["class_distribution"].items():
+        logger.info(f"  {class_name}: {count}")
+
+    # Create data loaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=0,  # Set to 0 for Windows compatibility
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0
+    )
+    test_loader = DataLoader(
+        test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0
+    )
+
+    # Initialize model
+    logger.info(f"Initializing model: {args.model_name}")
+    model = TransformerWAFClassifier(
+        model_name=args.model_name, num_classes=12, dropout=0.3
+    )
+
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
+    logger.info(f"Total parameters: {total_params:,}")
+    logger.info(f"Trainable parameters: {trainable_params:,}")
+
+    # Initialize trainer
+    trainer = SupervisedTrainer(
+        model=model,
+        train_dataloader=train_loader,
+        val_dataloader=val_loader,
+        test_dataloader=test_loader,
+        learning_rate=args.lr,
+        num_epochs=args.epochs,
+        warmup_steps=args.warmup_steps,
+        device=args.device,
+        save_dir=args.save_dir,
+        use_class_weights=True,
+    )
+
+    # Train model
+    test_results = trainer.train()
+
+    logger.info("\nTraining pipeline complete!")
+    logger.info(f"Model saved to: {args.save_dir}")
+    logger.info(f"Test Accuracy: {test_results['accuracy']:.4f}")
+    logger.info(f"Test F1-Score: {test_results['f1']:.4f}")
+
+
+if __name__ == "__main__":
+    main()
