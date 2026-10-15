@@ -344,3 +344,35 @@ class TransformerWAFClassifier(nn.Module):
             explanation['important_tokens'] = token_importance[:10]
 
         return explanation
+
+    def save_model(self, save_path: str):
+        """Save model checkpoint"""
+        torch.save({
+            'model_state_dict': self.state_dict(),
+            'model_name': self.model_name,
+            'num_classes': self.num_classes,
+            'hidden_size': self.hidden_size,
+            'class_labels': CLASS_LABELS
+        }, save_path)
+
+    @classmethod
+    def load_model(cls, load_path: str, device: str = "cpu"):
+        """Load model checkpoint"""
+        checkpoint = torch.load(load_path, map_location=device)
+
+        model = cls(
+            model_name=checkpoint['model_name'],
+            num_classes=checkpoint['num_classes'],
+            hidden_size=checkpoint.get('hidden_size')
+        )
+
+        state_dict = checkpoint['model_state_dict']
+
+        # Ignore persisted loss function class weights
+        # because they are not part of the inference architecture.
+        state_dict.pop('loss_fn.weight', None)
+
+        model.load_state_dict(state_dict, strict=False)
+        model.to(device)
+
+        return model
