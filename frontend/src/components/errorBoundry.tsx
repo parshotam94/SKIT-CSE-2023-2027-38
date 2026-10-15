@@ -24,4 +24,26 @@ class ErrorBoundary extends Component<Props, State> {
     hasError: false,
     error: null,
     errorInfo: null
-  };
+  };public static getDerivedStateFromError(error: Error): State {
+      return { hasError: true, error, errorInfo: null };
+    }
+  
+    public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+      console.error('ErrorBoundary caught an error:', error, errorInfo);
+      
+      this.setState({
+        error,
+        errorInfo
+      });
+    }
+  
+    private handleReset = () => {
+      this.setState({
+        hasError: false,
+        error: null,
+        errorInfo: null
+      });
+      
+      window.location.reload();
+    };
+  
