@@ -10,9 +10,7 @@ interface SystemConfig {
   demo_request_count: number;
   demo_total_requests: number;
   anomaly_threshold: number;
-}
-
-const Dashboard = () => {
+}const Dashboard = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
@@ -155,8 +153,7 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-
-      {/* Stats Grid */}
+ {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Requests"
@@ -240,129 +237,6 @@ const Dashboard = () => {
       </div>
 
       {/* Performance Metrics */}
-      <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Metrics</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <MetricItem label="Cache Hit Rate" value={`${(cacheHitRate * 100).toFixed(1)}%`} />
-          <MetricItem label="Avg Score" value={avgScore.toFixed(3)} />
-          <MetricItem label="P99 Latency" value={`${p99Latency.toFixed(0)}ms`} />
-        </div>
-      </div>
-
-      {/* Model Info */}
-      {health && (
-        <div className="card bg-gradient-to-r from-primary-50 to-blue-50 border-primary-200">
-          <div className="flex items-start gap-4">
-            <Shield className="text-primary-600" size={40} />
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Transformer Model Status</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">Model:</span>
-                  <p className="font-semibold">DistilBERT-based</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">Parameters:</span>
-                  <p className="font-semibold">90.7M</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">Uptime:</span>
-                  <p className="font-semibold">{formatUptime(health.uptime_seconds)}</p>
-                </div>
-                <div>
-                  <span className="text-gray-600">Version:</span>
-                  <p className="font-semibold">{health.version}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Security Principles */}
-      <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Security Architecture</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <SecurityPrinciple
-            icon={Shield}
-            title="Defense in Depth"
-            description="Multiple security layers: validation, rate limiting, ML detection"
-          />
-          <SecurityPrinciple
-            icon={CheckCircle}
-            title="Zero Trust"
-            description="All requests validated and analyzed, no implicit trust"
-          />
-          <SecurityPrinciple
-            icon={Activity}
-            title="Real-time Detection"
-            description="Async ML-based anomaly detection on all traffic"
-          />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Helper Components
-interface StatCardProps {
-  title: string;
-  value: string;
-  icon: any;
-  color: 'blue' | 'red' | 'green' | 'yellow';
-  subtitle?: string;
-}
-
-const StatCard = ({ title, value, icon: Icon, color, subtitle }: StatCardProps) => {
-  const colorClasses = {
-    blue: 'bg-blue-100 text-blue-600',
-    red: 'bg-red-100 text-red-600',
-    green: 'bg-green-100 text-green-600',
-    yellow: 'bg-yellow-100 text-yellow-600',
-  };
-
-  return (
-    <div className="card">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
-          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
-        </div>
-        <div className={`p-3 rounded-lg ${colorClasses[color]}`}>
-          <Icon size={24} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const MetricItem = ({ label, value }: { label: string; value: string }) => (
-  <div className="text-center">
-    <p className="text-sm text-gray-600">{label}</p>
-    <p className="text-xl font-bold text-gray-900 mt-1">{value}</p>
-  </div>
-);
-
-const SecurityPrinciple = ({ icon: Icon, title, description }: { icon: any; title: string; description: string }) => (
-  <div className="flex gap-3 p-4 bg-gray-50 rounded-lg">
-    <Icon className="text-primary-600 flex-shrink-0" size={24} />
-    <div>
-      <h4 className="font-semibold text-gray-900">{title}</h4>
-      <p className="text-sm text-gray-600 mt-1">{description}</p>
-    </div>
-  </div>
-);
-
-// Utility Functions
-const formatUptime = (seconds: number): string => {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-};
-
-export default Dashboard;
-{/* Performance Metrics */}
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Metrics</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
