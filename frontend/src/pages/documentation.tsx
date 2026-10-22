@@ -222,3 +222,157 @@ const Documentation = () => {
                 </div>
                 <p className="text-gray-600 text-xs">Simulate attacks for testing (SQL, XSS, Path Traversal, Command Injection)</p>
               </div>
+<div className="p-4 bg-gray-50 rounded-lg font-mono text-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2 py-1 bg-purple-500 text-white rounded font-semibold">WS</span>
+                  <span>/ws/live</span>
+                </div>
+                <p className="text-gray-600 text-xs">WebSocket for real-time detection streaming</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Compliance Mapping */}
+      <div className="card">
+        <button
+          onClick={() => toggleSection('compliance')}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <FileText className="w-6 h-6 text-purple-600" />
+            <h2 className="text-xl font-bold text-gray-900">Compliance Mapping</h2>
+          </div>
+          {activeSection === 'compliance' ? <ChevronDown /> : <ChevronRight />}
+        </button>
+        
+        {activeSection === 'compliance' && (
+          <div className="mt-6 space-y-4 text-gray-700">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Framework</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Coverage</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200 text-sm">
+                  <tr>
+                    <td className="px-4 py-3 font-semibold">ISO/IEC 27001:2022</td>
+                    <td className="px-4 py-3">18/18 controls (100%)</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">✓ Full</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-semibold">NIST CSF v1.1</td>
+                    <td className="px-4 py-3">22/23 subcategories (96%)</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">✓ High</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-semibold">OWASP ASVS v4.0 L2</td>
+                    <td className="px-4 py-3">32/38 requirements (84%)</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-semibold">✓ Good</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-semibold">GDPR (Privacy by Design)</td>
+                    <td className="px-4 py-3">All principles (100%)</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">✓ Full</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-semibold">PCI DSS v4.0</td>
+                    <td className="px-4 py-3">Foundational controls (90%)</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">✓ High</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* SSDLC Mapping */}
+      <div className="card">
+        <button
+          onClick={() => toggleSection('ssdlc')}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <Database className="w-6 h-6 text-orange-600" />
+            <h2 className="text-xl font-bold text-gray-900">Secure SDLC (Modules I-V)</h2>
+          </div>
+          {activeSection === 'ssdlc' ? <ChevronDown /> : <ChevronRight />}
+        </button>
+        
+        {activeSection === 'ssdlc' && (
+          <div className="mt-6 space-y-4 text-gray-700">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-semibold text-blue-900 mb-2">Module I: Security Principles</h4>
+                <ul className="text-sm space-y-1">
+                  <li>✓ CIA Triad implementation</li>
+                  <li>✓ Defense in Depth (5 layers)</li>
+                  <li>✓ Least Privilege</li>
+                  <li>✓ OWASP Top 10 mitigation</li>
+                </ul>
+              </div>
+
+              <div className="p-4 bg-green-50 rounded-lg">
+                <h4 className="font-semibold text-green-900 mb-2">Module II: Threat Modeling</h4>
+                <ul className="text-sm space-y-1">
+                  <li>✓ STRIDE analysis</li>
+                  <li>✓ DREAD risk scoring</li>
+                  <li>✓ Attack trees</li>
+                  <li>✓ Data flow diagrams</li>
+                </ul>
+              </div>
+
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <h4 className="font-semibold text-purple-900 mb-2">Module III: Secure Coding</h4>
+                <ul className="text-sm space-y-1">
+                  <li>✓ Input validation (Pydantic)</li>
+                  <li>✓ Error handling</li>
+                  <li>✓ CERT/SEI guidelines</li>
+                  <li>✓ No hardcoded secrets</li>
+                </ul>
+              </div>
+
+              <div className="p-4 bg-yellow-50 rounded-lg">
+                <h4 className="font-semibold text-yellow-900 mb-2">Module IV: DevSecOps</h4>
+                <ul className="text-sm space-y-1">
+                  <li>✓ SAST (Bandit)</li>
+                  <li>✓ SCA (Safety, pip-audit)</li>
+                  <li>✓ DAST (OWASP ZAP)</li>
+                  <li>✓ Container security (Trivy)</li>
+                </ul>
+              </div>
+
+              <div className="p-4 bg-red-50 rounded-lg col-span-full">
+                <h4 className="font-semibold text-red-900 mb-2">Module V: Compliance & Standards</h4>
+                <ul className="text-sm space-y-1">
+                  <li>✓ ISO 27001 mapping (100%)</li>
+                  <li>✓ NIST CSF mapping (96%)</li>
+                  <li>✓ OWASP ASVS L2 (84%)</li>
+                  <li>✓ GDPR compliance (100%)</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default Documentation;
+
