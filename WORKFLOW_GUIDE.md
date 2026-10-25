@@ -111,3 +111,78 @@ transformer-waf/
 ```
 
 ---
+
+## 🔄 Complete Data Flow
+
+### High-Level Flow
+
+```
+1. TRAINING PHASE (Offline)
+   ─────────────────────────────
+   Access Logs → Parse → Normalize → Tokenize → Train Model
+                                                      ↓
+                                               Save Model Weights
+
+2. INFERENCE PHASE (Real-time)
+   ─────────────────────────────
+   HTTP Request → API → Normalize → Tokenize → Model Inference
+                   ↓                                 ↓
+              WebSocket ←──────────────── Anomaly Score
+                   ↓
+              Frontend Dashboard
+
+3. CONTINUOUS LEARNING (Background)
+   ─────────────────────────────
+   New Benign Traffic → Collect → Fine-tune Model → Deploy New Version
+```
+
+### Detailed Data Transformation
+
+```
+Raw HTTP Request:
+┌─────────────────────────────────────────────────────────────┐
+│ GET /api/users/123?format=json HTTP/1.1                     │
+│ Host: example.com                                            │
+│ User-Agent: Mozilla/5.0                                      │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+                    [PARSING]
+                          ↓
+Parsed Components:
+┌─────────────────────────────────────────────────────────────┐
+│ method: "GET"                                                │
+│ path: "/api/users/123"                                       │
+│ query_string: "format=json"                                  │
+│ headers: {"User-Agent": "Mozilla/5.0"}                       │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+                  [NORMALIZATION]
+                          ↓
+Normalized String:
+┌─────────────────────────────────────────────────────────────┐
+│ "GET /api/users/[ID] format=[VALUE]"                        │
+│ (IPs, UUIDs, timestamps removed → focus on structure)       │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+                  [TOKENIZATION]
+                          ↓
+Token IDs:
+┌─────────────────────────────────────────────────────────────┐
+│ [101, 2131, 1013, 8943, 2109, 1013, 102, ...]              │
+│ (BERT wordpiece tokens, max 128 length)                     │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+                  [MODEL INFERENCE]
+                          ↓
+Anomaly Score:
+┌─────────────────────────────────────────────────────────────┐
+│ {                                                            │
+│   "anomaly_score": 0.23,                                     │
+│   "is_anomalous": false,                                     │
+│   "reconstruction_error": 0.18,                              │
+│   "perplexity": 12.5                                         │
+│ }                                                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
