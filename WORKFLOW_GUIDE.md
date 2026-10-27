@@ -528,3 +528,123 @@ FastAPI Application (api/waf_api.py)
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Request Lifecycle
+
+```
+1. Request Arrives
+   ↓
+2. Middleware Processing
+   - CORS check
+   - Request logging
+   - Timing start
+   ↓
+3. Rate Limiting Check
+   - verify_rate_limit() dependency
+   - 100 req/min per IP
+   ↓
+4. Input Validation
+   - Pydantic model validation
+   - Type checking
+   - Length limits
+   ↓
+5. Route Handler
+   - Business logic
+   - Detection call
+   - Response generation
+   ↓
+6. Response Middleware
+   - Add security headers
+   - Log completion
+   - Return JSON
+```
+
+---
+
+## 🎨 Frontend Integration Flow
+
+### Frontend Architecture
+
+```
+React Application (frontend/src/)
+──────────────────────────────────
+
+┌─ Pages ───────────────────────────────────────────────────┐
+│                                                            │
+│ Dashboard.tsx           → Main overview, live stats       │
+│ LiveMonitoring.tsx      → Real-time detection stream      │
+│ AttackSimulation.tsx    → Test attack patterns            │
+│ Analytics.tsx           → Historical trends, charts       │
+│ Settings.tsx            → Configuration panel             │
+│ Documentation.tsx       → Security docs, API reference    │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+
+┌─ Services ────────────────────────────────────────────────┐
+│                                                            │
+│ api.ts                  → REST API client                 │
+│   - scanRequest()       → POST /scan                      │
+│   - getMetrics()        → GET /metrics/realtime           │
+│   - updateConfig()      → POST /config                    │
+│                                                            │
+│ websocket.ts            → WebSocket client                │
+│   - connect()           → WS /ws                          │
+│   - onDetection()       → Handle detection events         │
+│   - onMetrics()         → Handle metrics updates          │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+
+┌─ Components ──────────────────────────────────────────────┐
+│                                                            │
+│ Layout.tsx              → Main layout, navigation         │
+│ ErrorBoundary.tsx       → Error handling                  │
+│ DetectionCard.tsx       → Display detection result        │
+│ MetricsChart.tsx        → Real-time charts                │
+│ AlertPanel.tsx          → Threat alerts                   │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+### WebSocket Real-Time Flow
+
+```
+Frontend Connect
+     │
+     ├─ WS /ws (Connect)
+     │       │
+     │       ├─ Connection Manager (api/websocket_handler.py)
+     │       │   - Add client to active connections
+     │       │   - Send initial state
+     │       │
+     │       └─ Client receives events:
+     │
+     ├─ Event: "detection"
+     │   {
+     │     "type": "detection",
+     │     "timestamp": "...",
+     │     "request": {...},
+     │     "detection": {
+     │       "anomalyScore": 0.85,
+     │       "isAnomalous": true,
+     │       "severity": "high"
+     │     }
+     │   }
+     │   → Update LiveMonitoring page
+     │   → Show alert notification
+     │
+     └─ Event: "metrics_update"
+         {
+           "type": "metrics",
+           "data": {
+             "total_requests": 1234,
+             "anomalous_requests": 45,
+             "avg_anomaly_score": 0.23
+           }
+         }
+         → Update dashboard metrics
+         → Update charts
+```
+
+---
+
+## 👩‍💻 Development Workflow
