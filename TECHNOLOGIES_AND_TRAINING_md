@@ -29,3 +29,12 @@ This document summarizes the technology stack and the machine learning training 
 - Docker (optional) for containerization
 - Nginx / Apache integration examples
 - PowerShell and batch scripts for Windows startup
+
+## 2) High-Level ML Approach
+
+The WAF uses an anomaly detection strategy:
+- Train only on benign traffic.
+- Learn the normal structure of HTTP requests.
+- Mark large deviations from that normal pattern as anomalous.
+
+Model family: Transformer autoencoder with a pretrained encoder (DistilBERT by default).
