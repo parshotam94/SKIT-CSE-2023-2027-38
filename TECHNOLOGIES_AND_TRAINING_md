@@ -38,3 +38,38 @@ The WAF uses an anomaly detection strategy:
 - Mark large deviations from that normal pattern as anomalous.
 
 Model family: Transformer autoencoder with a pretrained encoder (DistilBERT by default).
+
+## 3) Training Data Flow
+
+1. Collect benign HTTP access logs (Apache or Nginx combined format).
+2. Parse logs into structured request fields (method, path, query, headers).
+3. Normalize requests to remove noisy dynamic tokens (IDs, UUIDs, timestamps, hashes, emails, IPs).
+4. Tokenize normalized text with a Transformer-compatible tokenizer.
+5. Train the model with Masked Language Modeling (MLM) on the benign data.
+
+## 4) Normalization Rules
+
+The normalizer reduces variance so the model can focus on structure rather than unique values. It replaces:
+- IP addresses, UUIDs, hashes, timestamps
+- Session IDs, JWTs, long numbers
+- Emails, phone numbers, credit card patterns
+- Numeric IDs in paths and query strings
+
+Normalization produces compact text like:
+
+```
+GET /api/users/[ID] ?id=[ID] UA:mozilla/5.0
+```
+
+## 5) Tokenization
+
+- Uses a pretrained tokenizer (DistilBERT by default).
+- Maximum sequence length: 128 tokens.
+- Padding and truncation are enabled for fixed-length batches.
+
+## 6) Model Architecture
+
+**Transformer Autoencoder**
+- Encoder: pretrained Transformer (DistilBERT by default).
+- Reconstruction head: predicts original tokens from the encoder output.
+- Optional classifier head (supervised) can be enabled for hybrid scoring.
