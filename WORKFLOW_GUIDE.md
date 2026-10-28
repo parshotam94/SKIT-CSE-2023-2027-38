@@ -648,3 +648,271 @@ Frontend Connect
 ---
 
 ## 👩‍💻 Development Workflow
+
+### Local Development Setup
+
+```bash
+# 1. Clone and setup environment
+git clone <repo>
+cd transformer-waf
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# 2. Prepare training data
+mkdir -p data/benign_logs
+# Copy your access logs to data/benign_logs/
+
+# 3. Train model (first time only)
+python -m model.train \
+    --log-dir data/benign_logs \
+    --output-dir models/waf_transformer \
+    --epochs 10
+
+# 4. Start backend API
+python -m api.waf_api
+
+# 5. Start frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+
+# 6. Access application
+# Backend: http://localhost:8000
+# Frontend: http://localhost:3000
+# API Docs: http://localhost:8000/docs
+```
+
+### Testing Workflow
+
+```bash
+# Unit tests
+pytest tests/
+
+# Test specific module
+pytest tests/test_detector.py
+
+# Test with coverage
+pytest --cov=. --cov-report=html
+
+# Manual API testing
+python scripts/test_api.py
+
+# Load testing
+python scripts/load_test.py --rps 100 --duration 60
+
+# Security scanning
+cd devsecops
+./bandit_scan.sh  # SAST
+./zap_scan.sh     # DAST
+```
+
+### Code Quality Checks
+
+```bash
+# Linting
+flake8 . --max-line-length=79
+
+# Type checking
+mypy api/ model/ inference/
+
+# Format code
+black . --line-length 79
+
+# Security audit
+safety check
+bandit -r . -x venv/
+```
+
+---
+
+## 🔧 Modification Guide
+
+### Common Modification Scenarios
+
+#### 1. **Add New Attack Type Detection**
+
+**Location**: `api/waf_api.py` → `determine_attack_type()`
+
+```python
+def determine_attack_type(
+    request_data: Dict[str, Any], anomaly_score: float
+) -> str:
+    """Add your attack type detection logic"""
+    
+    combined = f"{path} {query} {body}".lower()
+    
+    # Add your new attack type
+    if "your_attack_pattern" in combined:
+        return "Your Attack Type"
+    
+    # ... existing patterns
+```
+
+**Also update**: Frontend attack type colors/labels in `Analytics.tsx`
+
+#### 2. **Change Model Architecture**
+
+**Location**: `model/transformer_model.py`
+
+```python
+class TransformerAutoencoder(nn.Module):
+    def __init__(
+        self,
+        model_name: str = "distilbert-base-uncased",  # Change model here
+        # ... other params
+    ):
+        # Modify architecture
+        self.encoder = AutoModel.from_pretrained(model_name)
+        
+        # Add custom layers
+        self.custom_layer = nn.Linear(hidden_size, hidden_size)
+```
+
+**Requires**: Retraining the model
+
+#### 3. **Adjust Detection Threshold**
+
+**Via API** (Runtime):
+```bash
+curl -X POST http://localhost:8000/threshold \
+  -H "Content-Type: application/json" \
+  -d '{"threshold": 0.85}'
+```
+
+**Via Code** (Default):
+```python
+# utils/config.py
+class Config:
+    anomaly_threshold: float = 0.75  # Change default here
+```
+
+#### 4. **Add Custom Normalization Rules**
+
+**Location**: `parsing/normalizer.py`
+
+```python
+class RequestNormalizer:
+    def normalize(self, text: str) -> str:
+        # Add custom normalization
+        text = re.sub(r'your-pattern', '[YOUR_TOKEN]', text)
+        
+        # ... existing normalizations
+        return text
+```
+
+#### 5. **Change Rate Limiting**
+
+**Location**: `api/waf_api.py`
+
+```python
+# Constants at top
+RATE_LIMIT_REQUESTS = 100  # Change requests limit
+RATE_LIMIT_WINDOW = 60     # Change time window (seconds)
+```
+
+#### 6. **Add New API Endpoint**
+
+**Location**: `api/waf_api.py`
+
+```python
+@app.get("/your-endpoint")
+async def your_handler():
+    """Your endpoint logic"""
+    return {"data": "your response"}
+```
+
+**Frontend Integration**: `frontend/src/services/api.ts`
+
+```typescript
+export const yourApiCall = async () => {
+  const response = await axios.get(`${API_BASE_URL}/your-endpoint`);
+  return response.data;
+};
+```
+
+#### 7. **Modify Anomaly Score Calculation**
+
+**Location**: `inference/detector.py`
+
+```python
+def _calculate_anomaly_score(
+    self, recon_error: float, perplexity: float
+) -> float:
+    """Modify scoring formula"""
+    
+    # Current: 70% recon + 30% perplexity
+    # Change weights:
+    score = (0.6 * recon_error) + (0.4 * normalized_perplexity)
+    
+    return score
+```
+
+#### 8. **Add New Frontend Page**
+
+1, Create page: `frontend/src/pages/YourPage.tsx`
+```typescript
+export const YourPage = () => {
+  return <div>Your content</div>;
+};
+```
+
+2. Add route: `frontend/src/App.tsx`
+```typescript
+<Route path="/your-page" element={<YourPage />} />
+```
+
+3. Add navigation: `frontend/src/components/Layout.tsx`
+
+#### 9. **Customize Logging**
+
+**Location**: `utils/logger.py`
+
+```python
+class WAFLogger:
+    def __init__(self, name: str):
+        # Modify log format
+        formatter = logging.Formatter(
+            '%(asctime)s - YOUR_FORMAT - %(message)s'
+        )
+```
+
+#### 10. **Add Model Performance Metrics**
+
+**Location**: `inference/detector.py`
+
+```python
+@dataclass
+class DetectionResult:
+    # Add your custom metrics
+    your_metric: float = 0.0
+    
+    def to_dict(self) -> Dict:
+        return {
+            # ... existing fields
+            "your_metric": self.your_metric
+        }
+```
+
+### Best Practices for Modifications
+
+```
+✅ DO:
+- Test changes locally first
+- Update documentation
+- Add unit tests for new features
+- Follow existing code style (PEP 8)
+- Log important events
+- Validate inputs
+- Handle errors gracefully
+
+❌ DON'T:
+- Modify production models without testing
+- Skip input validation
+- Hard-code sensitive data
+- Break API compatibility
+- Ignore security best practices
+- Forget to update frontend when API changes
+```
+
+---
