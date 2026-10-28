@@ -77,3 +77,137 @@ INFO: Demo mode complete: 100 requests generated
 - Detector uses new threshold immediately.
 - Live Monitoring shows different results.
 - Analytics reflects new classification.
+
+
+### Test 3: Detection Modes
+
+#### Monitor Mode
+
+**Steps:**
+1. Settings → Detection Mode: Monitor Only.
+2. Save Configuration.
+3. Send anomalous request (manual or wait for demo).
+4. Check backend logs.
+
+**Expected Results:**
+- Request logged only.
+- No alerts or blocks.
+- HTTP 200 response.
+- Dashboard badge shows "👁️ Monitor Only" (blue).
+
+#### Detect & Alert Mode
+
+**Steps:**
+1. Settings → Detection Mode: Detect & Alert.
+2. Save Configuration.
+3. Send anomalous request.
+4. Check backend logs.
+
+**Expected Results:**
+- Request logged with WARNING level.
+- Alert message: "Anomalous request detected (allowed)".
+- HTTP 200 response (request allowed).
+- Dashboard badge shows "⚠️ Detect & Alert" (yellow).
+
+#### Block Mode
+
+**Steps:**
+1. Settings → Detection Mode: Block Mode.
+2. Save Configuration.
+3. Send anomalous request.
+4. Check response.
+
+**Expected Results:**
+- Request rejected with HTTP 403.
+- Error response:
+
+```json
+{
+  "detail": {
+    "error": "Request blocked by WAF",
+    "reason": "Anomalous request detected",
+    "severity": "High",
+    "anomaly_score": 0.87
+  }
+}
+```
+
+- Dashboard badge shows "🛡️ Block Mode" (red).
+
+**Test Request (curl):**
+
+```bash
+curl -X POST http://localhost:8000/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "method": "GET",
+    "path": "/api/users",
+    "query_string": "id=1 OR 1=1",
+    "headers": {"User-Agent": "sqlmap"},
+    "body": ""
+  }'
+```
+
+---
+
+### Test 5: Dashboard Real-Time Sync
+
+**Steps:**
+1. Open Dashboard page.
+2. Enable demo mode in Settings (separate tab).
+3. Watch Dashboard header.
+4. Verify badges update:
+   - Demo counter: "🎮 Demo: 25/100"
+   - Detection mode badge.
+   - Health status badge.
+5. Change detection mode in Settings.
+6. Refresh Dashboard (or wait 5s).
+7. Verify mode badge updates.
+
+**Expected Results:**
+- Dashboard auto-refreshes every 5s.
+- Demo counter updates in real time.
+- Mode badges show correct colors.
+- Settings icon link works.
+
+---
+
+### Test 6: Analytics Live Data
+
+**Steps:**
+1. Navigate to Analytics page.
+2. Verify "Demo Data (No Traffic Yet)" badge (if no traffic).
+3. Enable demo mode.
+4. Wait 5 seconds.
+5. Verify badge changes to "● Live Data" (green, pulsing).
+6. Verify charts populate with real data.
+7. Verify detection mode badge appears.
+
+**Expected Results:**
+- Data source badge updates correctly.
+- Charts show real demo traffic.
+- Hourly trend updates.
+- Attack distribution shows actual patterns.
+- Severity distribution reflects real scores.
+
+---
+
+### Test 7: Live Monitoring WebSocket
+
+**Steps:**
+1. Navigate to Live Monitoring page.
+2. Verify connection status: "WebSocket Connected" (green).
+3. Enable demo mode in Settings.
+4. Watch events stream in real time.
+5. Verify event details:
+   - Path, method, query.
+   - Anomaly score.
+   - Severity badge (color-coded).
+   - Timestamp.
+
+**Expected Results:**
+- WebSocket connects immediately.
+- Events appear within 2 seconds.
+- Max 100 events displayed.
+- Stats update (total, anomalous, average score).
+- Auto-reconnects if disconnected.
