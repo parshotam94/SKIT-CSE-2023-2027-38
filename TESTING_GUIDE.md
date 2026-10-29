@@ -211,3 +211,175 @@ curl -X POST http://localhost:8000/scan \
 - Max 100 events displayed.
 - Stats update (total, anomalous, average score).
 - Auto-reconnects if disconnected.
+
+
+### Test 8: UI/UX Animations
+
+**Steps:**
+1. Settings page:
+   - Hover over buttons → Scale up (105%).
+   - Click buttons → Scale down (95%).
+   - Save button shows spinner during save.
+2. Demo progress bar:
+   - Animates smoothly (500ms transition).
+   - Gradient colors.
+3. Badges:
+   - "Live Data" badge pulses.
+   - Mode badges color-coded.
+4. Cards:
+   - Hover → Shadow increases.
+   - Fade-in animation on load.
+
+**Expected Results:**
+- Smooth, professional animations.
+- No janky transitions.
+- Clear visual feedback.
+- Accessible color contrasts.
+
+---
+
+## Troubleshooting
+
+### Demo Not Generating Traffic
+
+**Check:**
+1. Backend logs: `INFO: Demo progress: X/100`.
+2. `SYSTEM_CONFIG.demo_mode = True`.
+3. Browser console for errors.
+4. WebSocket connection status.
+
+**Fix:**
+- Restart backend: `Ctrl+C` then `python api/waf_api.py`.
+- Clear browser cache.
+- Check API endpoint: `GET http://localhost:8000/config`.
+
+### Detection Mode Not Blocking
+
+**Check:**
+1. Config saved: `POST /config` returned 200.
+2. Mode badge shows "Block" on Dashboard.
+3. Request actually anomalous (score > threshold).
+
+**Fix:**
+- Re-save configuration.
+- Check threshold setting (if too high, nothing blocks).
+- Verify request is malicious (e.g., SQL injection).
+
+### Progress Bar Not Updating
+
+**Check:**
+1. Browser console for errors.
+2. Auto-refresh enabled (check useEffect).
+3. Config endpoint returning demo_request_count.
+
+**Fix:**
+- Hard refresh (Ctrl+Shift+R).
+- Check Network tab: `GET /config` every 2s.
+- Verify backend incrementing counter.
+
+---
+
+## Success Criteria
+
+- Demo generates exactly 100 requests.
+- Demo auto-stops at 100/100.
+- Progress bar updates smoothly.
+- Reset button works.
+- Monitor mode: logs only.
+- Detect mode: alerts + allows.
+- Block mode: rejects with 403.
+- Threshold sync works globally.
+- Dashboard shows real-time status.
+- Analytics shows live data.
+- Live Monitoring streams events.
+- Animations are smooth.
+- No console errors.
+- No backend exceptions.
+
+---
+
+## Performance Benchmarks
+
+### Demo Mode
+- 100 requests @ 2s intervals = ~3.3 minutes.
+- CPU usage: < 10%.
+- Memory: < 100MB increase.
+
+### Auto-Refresh
+- Settings: Every 2s (during demo only).
+- Dashboard: Every 5s.
+- Analytics: Every 5s.
+- Network overhead: < 1KB per request.
+
+### WebSocket
+- Latency: < 50ms.
+- Bandwidth: ~5KB per event.
+- Reconnect: < 3 seconds.
+
+---
+
+## Final Validation
+
+**Test 1: Get config**
+```bash
+curl http://localhost:8000/config
+```
+
+**Test 2: Enable demo mode**
+```bash
+curl -X POST http://localhost:8000/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "anomaly_threshold": 0.5,
+    "detection_mode": "detect",
+    "demo_mode": true,
+    "demo_request_count": 0,
+    "demo_total_requests": 100,
+    "severity_thresholds": {
+      "low": 0.3,
+      "medium": 0.6,
+      "high": 0.85,
+      "critical": 0.95
+    },
+    "logging_level": "info",
+    "enable_notifications": true
+  }'
+```
+
+**Test 3: Wait 30 seconds, then check progress**
+```bash
+sleep 30
+curl http://localhost:8000/config | grep demo_request_count
+```
+
+**Test 4: Reset demo**
+```bash
+curl -X POST http://localhost:8000/config/reset-demo
+```
+
+**Test 5: Test block mode**
+```bash
+curl -X POST http://localhost:8000/config \
+  -H "Content-Type: application/json" \
+  -d '{"detection_mode": "block", ...}'
+```
+
+```bash
+curl -X POST http://localhost:8000/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "method": "GET",
+    "path": "/api/users",
+    "query_string": "id=1 OR 1=1",
+    "headers": {"User-Agent": "sqlmap"},
+    "body": ""
+  }'
+```
+
+Expected result: 403 Forbidden.
+
+---
+
+**Happy Testing! 🚀**
+
+*Last Updated: February 3, 2026*
