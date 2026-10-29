@@ -73,3 +73,67 @@ GET /api/users/[ID] ?id=[ID] UA:mozilla/5.0
 - Encoder: pretrained Transformer (DistilBERT by default).
 - Reconstruction head: predicts original tokens from the encoder output.
 - Optional classifier head (supervised) can be enabled for hybrid scoring.
+
+## 7) Training Algorithm
+
+**Masked Language Modeling (MLM)** on benign requests:
+- 15% of tokens are selected for masking.
+- 80% replaced with [MASK]
+- 10% replaced with random tokens
+- 10% kept unchanged
+
+Loss function:
+- Cross-entropy over masked tokens (standard MLM).
+
+Optimization:
+- AdamW optimizer
+- Linear warmup and learning-rate schedule
+- Gradient clipping for stability
+
+## 8) Anomaly Scoring (Inference)
+
+At inference, each request is normalized and tokenized, then passed through the model. The system computes a combined anomaly score using multiple signals:
+- Reconstruction error (token mismatch rate)
+- Perplexity (language model uncertainty)
+- Attention pattern anomaly
+- Embedding distance (Mahalanobis distance in embedding space)
+
+The system calibrates and thresholds the final score to decide:
+- Monitor (log only)
+- Detect (log + alert)
+- Block (deny request)
+
+## 9) Inference Pipeline
+
+1. Receive request payload at `/scan`.
+2. Normalize and tokenize.
+3. Run model inference.
+4. Compute anomaly score + confidence.
+5. Compare against configurable threshold.
+6. Emit WebSocket event and update metrics.
+
+## 10) Continuous Learning (Optional)
+
+The system can fine-tune on new verified benign traffic:
+- Collect recent benign samples.
+- Validate for drift.
+- Fine-tune for a few epochs with a lower learning rate.
+- Save a new model version.
+
+This keeps the model aligned with evolving normal traffic patterns.
+
+## 11) Practical Notes for the Demo
+
+- Demo mode generates both benign and attack-like requests.
+- For real traffic, use the reverse proxy to route requests through the WAF.
+- Set `detection_mode` to `block` to enforce blocking behavior.
+
+## 12) Where This Lives in the Repo
+
+- Training pipeline: `model/train.py`
+- Model architecture: `model/transformer_model.py`
+- Normalizer: `parsing/normalizer.py`
+- Tokenizer: `tokenization/tokenizer.py`
+- Inference: `inference/detector.py`
+- API service: `api/waf_api.py`
+- Dashboard: `frontend/`
