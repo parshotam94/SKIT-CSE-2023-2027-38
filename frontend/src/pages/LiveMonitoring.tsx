@@ -1,11 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  Activity, AlertTriangle, Shield, Zap, Wifi, WifiOff, Settings, 
-  Search, Pause, Play, Trash2, X, Copy, ExternalLink, Info, Filter 
-} from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Activity, AlertTriangle, Shield, Zap, Wifi, WifiOff, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { getWsUrl } from '../services/api';
-import { useToast } from '../context/ToastContext';
 
 interface DetectionEvent {
   type: string;
@@ -32,30 +27,22 @@ interface DetectionEvent {
 }
 
 const LiveMonitoring = () => {
-  const { success } = useToast();
   const [events, setEvents] = useState<DetectionEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
-  const isPausedRef = useRef(false);
-  isPausedRef.current = isPaused;
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
-  const [activeModalEvent, setActiveModalEvent] = useState<DetectionEvent | null>(null);
-
   const [stats, setStats] = useState({
     totalRequests: 0,
     anomalousRequests: 0,
     avgScore: 0,
     criticalCount: 0
   });
-
+  
   const wsRef = useRef<WebSocket | null>(null);
-  const maxEvents = 150;
+  const maxEvents = 100; // Keep last 100 events
 
   useEffect(() => {
     connectWebSocket();
+    
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
@@ -65,526 +52,279 @@ const LiveMonitoring = () => {
 
   const connectWebSocket = () => {
     try {
-      const wsUrl = getWsUrl('/ws/live');
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
+      const isProd = window.location.hostname === 'transformer-waf.onrender.com';
+      const defaultWsUrl = isProd ? 'wss://transformer-waf-api.onrender.com' : 'ws://localhost:8000';
+      const wsBaseUrl = (import.meta as any).env?.VITE_WS_URL || defaultWsUrl;
+      const ws = new WebSocket(`${wsBaseUrl}/ws/live`);
+      
       ws.onopen = () => {
+        console.log('WebSocket connected');
         setIsConnected(true);
         setConnectionError(null);
       };
-
+      
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          
           if (data.type === 'detection') {
             const detectionEvent = data as DetectionEvent;
-
-            // Update stats regardless of pause
+            
+            setEvents(prev => {
+              const newEvents = [detectionEvent, ...prev].slice(0, maxEvents);
+              return newEvents;
+            });
+            
+            // Update stats
             setStats(prev => ({
               totalRequests: prev.totalRequests + 1,
               anomalousRequests: prev.anomalousRequests + (detectionEvent.detection.isAnomalous ? 1 : 0),
               avgScore: ((prev.avgScore * prev.totalRequests) + detectionEvent.detection.anomalyScore) / (prev.totalRequests + 1),
               criticalCount: prev.criticalCount + (detectionEvent.detection.severity === 'critical' ? 1 : 0)
             }));
-
-            // Only append to event list if not paused
-            if (!isPausedRef.current) {
-              setEvents(prev => [detectionEvent, ...prev].slice(0, maxEvents));
-            }
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
       };
-
-      ws.onerror = () => {
-        setConnectionError('Connection interrupted');
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionError('Connection error');
       };
-
+      
       ws.onclose = () => {
+        console.log('WebSocket disconnected');
         setIsConnected(false);
+        
+        // Attempt to reconnect after 3 seconds
         setTimeout(() => {
-          if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+          if (wsRef.current?.readyState === WebSocket.CLOSED) {
             connectWebSocket();
           }
-        }, 4000);
+        }, 3000);
       };
-    } catch (error: any) {
-      setConnectionError(error.message || 'Failed to initialize WebSocket');
+      
+      wsRef.current = ws;
+      
+    } catch (error) {
+      console.error('Failed to connect WebSocket:', error);
+      setConnectionError('Failed to connect');
     }
   };
 
-  const getScoreColor = (score: number) => {
-    if (score > 0.8) return 'text-rose-600 dark:text-rose-400';
-    if (score > 0.5) return 'text-amber-600 dark:text-amber-400';
-    return 'text-emerald-600 dark:text-emerald-400';
-  };
-
-  const getSeverityBadgeClass = (severity: string) => {
+  const getSeverityColor = (severity: string): string => {
     switch (severity) {
       case 'critical':
-        return 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-900/60';
+        return 'bg-red-100 text-red-800 border-red-300';
       case 'high':
-        return 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950/60 dark:text-orange-300 dark:border-orange-900/60';
+        return 'bg-orange-100 text-orange-800 border-orange-300';
       case 'medium':
-        return 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-900/60';
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'low':
       default:
-        return 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-900/60';
+        return 'bg-green-100 text-green-800 border-green-300';
     }
   };
 
-  const copyPayload = (ev: DetectionEvent) => {
-    navigator.clipboard.writeText(JSON.stringify(ev, null, 2));
-    success('Payload Copied', 'JSON event payload copied to clipboard');
+  const getScoreColor = (score: number): string => {
+    if (score >= 0.85) return 'text-red-600 font-bold';
+    if (score >= 0.6) return 'text-orange-600 font-semibold';
+    if (score >= 0.3) return 'text-yellow-600';
+    return 'text-green-600';
   };
 
-  const filteredEvents = useMemo(() => {
-    return events.filter(ev => {
-      if (selectedSeverity !== 'all' && ev.detection.severity !== selectedSeverity) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const combined = `${ev.request.method} ${ev.request.path} ${ev.request.query} ${ev.request.ip} ${ev.request.userAgent}`.toLowerCase();
-        return combined.includes(query);
-      }
-      return true;
-    });
-  }, [events, selectedSeverity, searchQuery]);
-
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6 animate-fadeIn">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Live Monitoring Stream
-            </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 live-pulse"></span>
-              Live Feed
-            </span>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Live Traffic Monitoring</h1>
+        <p className="text-gray-600 mt-2">
+          Real-time HTTP request stream and ML-based anomaly detection (trained on benign traffic)
+        </p>
+      </div>
+
+      {/* Architecture Info Banner */}
+      <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-lg">
+        <div className="flex items-start gap-3">
+          <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="text-blue-900 font-semibold">Anomaly-Based Detection (Not Rule-Based)</p>
+            <p className="text-blue-700 mt-1">
+              The ML model detects deviations from learned benign patterns. 
+              "BLOCKED" indicates high anomaly score (configurable threshold in Settings). 
+              Actual blocking policy is determined by your deployment configuration.
+            </p>
           </div>
-          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-            Real-time WebSocket telemetry for incoming HTTP requests and ML inference verdicts
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Link
-            to="/simulation"
-            className="btn btn-secondary text-xs flex items-center gap-1.5"
-          >
-            <Zap size={15} className="text-amber-500" />
-            Inject Test Traffic
-          </Link>
-          <Link
-            to="/settings"
-            className="p-2 rounded-xl border border-slate-200 dark:border-dark-700 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-dark-700"
-            title="Configure Thresholds"
-          >
-            <Settings size={18} />
-          </Link>
         </div>
       </div>
 
-      {/* Model Detection Note Banner */}
-      <div className="p-4 bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900/50 rounded-xl flex items-start gap-3">
-        <Info className="w-5 h-5 text-sky-600 dark:text-sky-400 flex-shrink-0 mt-0.5" />
-        <div className="text-xs text-sky-900 dark:text-sky-200 leading-relaxed">
-          <span className="font-bold">Deep Learning Semantic Scoring:</span> This system evaluates requests using Transformer reconstruction loss against learned benign models. High scores trigger configurable actions (alerting or blocking). Click on any event below to inspect full headers and token metrics.
-        </div>
-      </div>
-
-      {/* Connection & Stream Bar */}
-      <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-3 ${
-        isConnected 
-          ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/40' 
-          : 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40'
+      {/* Connection Status */}
+      <div className={`card transition-all duration-300 ${
+        isConnected ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
       }`}>
-        <div className="flex items-center gap-2.5">
-          {isConnected ? (
-            <>
-              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-                <Wifi size={18} />
-              </div>
-              <div>
-                <span className="text-sm font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 live-pulse"></span>
-                  WebSocket Stream Active
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {isConnected ? (
+              <>
+                <Wifi className="w-5 h-5 text-green-600" />
+                <span className="font-semibold text-green-800 inline-flex items-center">
+                  <span className="live-pulse mr-2">●</span>
+                  WebSocket Connected
                 </span>
-                <p className="text-xs text-emerald-700 dark:text-emerald-400/80">Listening for real-time security events</p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-600 dark:text-rose-400">
-                <WifiOff size={18} />
-              </div>
-              <div>
-                <span className="text-sm font-bold text-rose-900 dark:text-rose-300">
-                  {connectionError || 'Disconnected - Attempting Reconnect...'}
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-5 h-5 text-red-600" />
+                <span className="font-semibold text-red-800">
+                  {connectionError || 'Disconnected - Reconnecting...'}
                 </span>
-                <p className="text-xs text-rose-700 dark:text-rose-400/80">Check that backend is running on port 8000</p>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              </>
+            )}
+          </div>
           <button
-            onClick={() => setIsPaused(!isPaused)}
-            className={`btn text-xs px-3 py-1.5 flex items-center gap-1.5 ${
-              isPaused 
-                ? 'bg-amber-600 hover:bg-amber-500 text-white' 
-                : 'btn-secondary'
-            }`}
+            onClick={connectWebSocket}
+            className="btn-secondary text-sm"
+            disabled={isConnected}
           >
-            {isPaused ? <Play size={14} /> : <Pause size={14} />}
-            <span>{isPaused ? 'Resume Stream' : 'Pause Stream'}</span>
+            Reconnect
           </button>
-          
-          <button
-            onClick={() => setEvents([])}
-            className="btn btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5"
-            title="Clear Stream History"
-          >
-            <Trash2 size={14} />
-            <span>Clear</span>
-          </button>
-
-          {!isConnected && (
-            <button
-              onClick={connectWebSocket}
-              className="btn btn-primary text-xs px-3 py-1.5"
-            >
-              Reconnect
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Stream Metrics Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-4">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Total Requests</p>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{stats.totalRequests}</p>
+              <p className="text-sm text-gray-600">Total Requests</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.totalRequests}</p>
             </div>
-            <div className="p-2.5 rounded-xl bg-primary-500/10 text-primary-500">
-              <Activity size={20} />
-            </div>
+            <Activity className="w-8 h-8 text-blue-600" />
           </div>
         </div>
 
-        <div className="card p-4">
+        <div className="card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Anomalous</p>
-              <p className="text-2xl font-bold text-amber-500 mt-1">{stats.anomalousRequests}</p>
+              <p className="text-sm text-gray-600">Anomalous</p>
+              <p className="text-2xl font-bold text-orange-600">{stats.anomalousRequests}</p>
             </div>
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500">
-              <AlertTriangle size={20} />
-            </div>
+            <AlertTriangle className="w-8 h-8 text-orange-600" />
           </div>
         </div>
 
-        <div className="card p-4">
+        <div className="card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Avg Score</p>
-              <p className={`text-2xl font-bold mt-1 ${getScoreColor(stats.avgScore)}`}>
+              <p className="text-sm text-gray-600">Avg Score</p>
+              <p className={`text-2xl font-bold ${getScoreColor(stats.avgScore)}`}>
                 {stats.avgScore.toFixed(3)}
               </p>
             </div>
-            <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-500">
-              <Zap size={20} />
-            </div>
+            <Zap className="w-8 h-8 text-yellow-600" />
           </div>
         </div>
 
-        <div className="card p-4">
+        <div className="card">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Critical Threats</p>
-              <p className="text-2xl font-bold text-rose-500 mt-1">{stats.criticalCount}</p>
+              <p className="text-sm text-gray-600">Critical Threats</p>
+              <p className="text-2xl font-bold text-red-600">{stats.criticalCount}</p>
             </div>
-            <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500">
-              <Shield size={20} />
-            </div>
+            <Shield className="w-8 h-8 text-red-600" />
           </div>
         </div>
       </div>
 
-      {/* Stream Controls & Table Card */}
-      <div className="card space-y-4">
-        {/* Filters & Search Toolbar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-            <input
-              type="text"
-              placeholder="Search by path, method, IP..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input-field pl-9 text-xs"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-            <span className="text-slate-400 font-medium mr-1 flex items-center gap-1">
-              <Filter size={13} /> Severity:
-            </span>
-            {['all', 'low', 'medium', 'high', 'critical'].map((sev) => (
-              <button
-                key={sev}
-                onClick={() => setSelectedSeverity(sev)}
-                className={`px-2.5 py-1 rounded-lg font-semibold uppercase tracking-wider text-[11px] transition-all ${
-                  selectedSeverity === sev
-                    ? 'bg-slate-900 text-white dark:bg-primary-600 dark:text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-dark-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-dark-700'
-                }`}
-              >
-                {sev}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Live Stream Table */}
-        {filteredEvents.length === 0 ? (
-          <div className="text-center py-14 border border-dashed border-slate-200 dark:border-dark-700 rounded-xl">
-            <Shield className="w-14 h-14 text-slate-300 dark:text-dark-700 mx-auto mb-3" />
-            <p className="text-slate-700 dark:text-slate-300 font-semibold text-sm">
-              {events.length === 0 ? 'Waiting for incoming HTTP traffic...' : 'No events match your filter criteria'}
+      {/* Live Events Table */}
+      <div className="card">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Live Detection Stream</h2>
+        
+        {events.length === 0 ? (
+          <div className="text-center py-12">
+            <Shield className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-600 font-medium mb-2">
+              {isConnected ? 'Waiting for traffic...' : 'Connect to view live traffic'}
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-              {events.length === 0
-                ? 'Launch an attack simulation or enable Demo traffic in Settings to generate live events.'
-                : 'Try adjusting your search query or severity filter.'}
+            <p className="text-sm text-gray-500 mb-4">
+              Enable Demo Mode in Settings to generate synthetic traffic, or send real requests to /scan endpoint
             </p>
-            {events.length === 0 && (
-              <Link
-                to="/simulation"
-                className="btn btn-primary text-xs mt-4 inline-flex items-center gap-1.5"
-              >
-                <Zap size={14} />
-                Simulate Attacks Now
-              </Link>
-            )}
+            <Link 
+              to="/settings" 
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+              Go to Settings
+            </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-dark-700/80">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-dark-800">
-              <thead className="bg-slate-50 dark:bg-dark-850">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Time</th>
-                  <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Method</th>
-                  <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Path</th>
-                  <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Client IP</th>
-                  <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Score</th>
-                  <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Severity</th>
-                  <th className="px-3.5 py-2.5 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Action</th>
-                  <th className="px-3.5 py-2.5 text-right text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Inspect</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Path</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-dark-800 bg-white dark:bg-dark-900">
-                {filteredEvents.map((event, idx) => {
-                  const isBlocked = event.detection.isAnomalous;
-                  return (
-                    <tr
-                      key={`${event.timestamp}-${idx}`}
-                      onClick={() => setActiveModalEvent(event)}
-                      className={`cursor-pointer transition-colors duration-150 ${
-                        isBlocked
-                          ? 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-50 dark:hover:bg-rose-950/40'
-                          : 'hover:bg-slate-50 dark:hover:bg-dark-800/60'
-                      }`}
-                    >
-                      <td className="px-3.5 py-2.5 text-xs text-slate-500 dark:text-slate-400 font-mono whitespace-nowrap">
-                        {new Date(event.timestamp).toLocaleTimeString()}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-xs font-mono">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          event.request.method === 'GET' 
-                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300' 
-                            : event.request.method === 'POST' 
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' 
-                            : 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300'
-                        }`}>
-                          {event.request.method}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-xs font-mono text-slate-900 dark:text-slate-200 max-w-xs truncate" title={`${event.request.path}${event.request.query}`}>
-                        {event.request.path}
-                        {event.request.query && <span className="text-slate-400">{event.request.query}</span>}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-xs font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                        {event.request.ip}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-xs font-mono font-bold whitespace-nowrap">
-                        <span className={getScoreColor(event.detection.anomalyScore)}>
-                          {event.detection.anomalyScore.toFixed(3)}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-xs whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getSeverityBadgeClass(event.detection.severity)}`}>
-                          {event.detection.severity.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-xs font-semibold whitespace-nowrap">
-                        {isBlocked ? (
-                          <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1 font-bold">
-                            🚨 BLOCKED
-                          </span>
-                        ) : (
-                          <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            ✓ ALLOWED
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3.5 py-2.5 text-xs text-right whitespace-nowrap">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveModalEvent(event);
-                          }}
-                          className="text-primary-600 dark:text-primary-400 hover:underline text-xs font-medium"
-                        >
-                          Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+              <tbody className="bg-white divide-y divide-gray-200">
+                {events.map((event, idx) => (
+                  <tr
+                    key={`${event.timestamp}-${idx}`}
+                    className={`transition-colors duration-150 ${
+                      event.detection.isAnomalous ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {new Date(event.timestamp).toLocaleTimeString()}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                        event.request.method === 'GET' ? 'bg-blue-100 text-blue-800' :
+                        event.request.method === 'POST' ? 'bg-green-100 text-green-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {event.request.method}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono text-gray-900 max-w-xs truncate">
+                      {event.request.path}{event.request.query}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono text-gray-600">
+                      {event.request.ip}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <span className={getScoreColor(event.detection.anomalyScore)}>
+                        {event.detection.anomalyScore.toFixed(4)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold border ${getSeverityColor(event.detection.severity)}`}>
+                        {event.detection.severity.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {event.detection.isAnomalous ? (
+                        <span className="text-red-600 font-semibold">🚨 BLOCKED</span>
+                      ) : (
+                        <span className="text-green-600">✓ Allowed</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      {/* Payload Inspection Modal */}
-      {activeModalEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
-          <div className="card max-w-2xl w-full max-h-[85vh] flex flex-col p-6 shadow-2xl border border-slate-300 dark:border-dark-700">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-dark-700">
-              <div className="flex items-center gap-2.5">
-                <div className={`p-2 rounded-xl ${
-                  activeModalEvent.detection.isAnomalous 
-                    ? 'bg-rose-500/10 text-rose-500' 
-                    : 'bg-emerald-500/10 text-emerald-500'
-                }`}>
-                  <Shield size={22} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Request Payload Telemetry
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                    {new Date(activeModalEvent.timestamp).toISOString()}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveModalEvent(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Modal Content Scrollable Area */}
-            <div className="py-4 space-y-4 overflow-y-auto flex-1 text-xs">
-              {/* Verdict Summary Bar */}
-              <div className={`p-3 rounded-xl border flex items-center justify-between ${
-                activeModalEvent.detection.isAnomalous 
-                  ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/50' 
-                  : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50'
-              }`}>
-                <div>
-                  <span className="font-bold text-sm text-slate-900 dark:text-white block">
-                    {activeModalEvent.detection.isAnomalous ? '⚠️ Anomaly Detected' : '✓ Normal Benign Traffic'}
-                  </span>
-                  <span className="text-slate-600 dark:text-slate-300 text-xs">
-                    Confidence: {(activeModalEvent.detection.confidence * 100).toFixed(1)}% | Threshold: {activeModalEvent.detection.threshold}
-                  </span>
-                </div>
-                <span className={`px-3 py-1 rounded-lg font-bold text-xs uppercase ${getSeverityBadgeClass(activeModalEvent.detection.severity)}`}>
-                  {activeModalEvent.detection.severity}
-                </span>
-              </div>
-
-              {/* Anomaly Gauge */}
-              <div className="p-3 bg-slate-50 dark:bg-dark-800/70 rounded-xl border border-slate-200 dark:border-dark-700">
-                <div className="flex justify-between font-semibold mb-1.5">
-                  <span className="text-slate-500 dark:text-slate-400">Model Anomaly Score</span>
-                  <span className={`font-mono font-bold ${getScoreColor(activeModalEvent.detection.anomalyScore)}`}>
-                    {activeModalEvent.detection.anomalyScore.toFixed(4)} / 1.0000
-                  </span>
-                </div>
-                <div className="h-2.5 rounded-full bg-slate-200 dark:bg-dark-700 overflow-hidden relative">
-                  <div
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      activeModalEvent.detection.anomalyScore > 0.7 ? 'bg-rose-500' : activeModalEvent.detection.anomalyScore > 0.4 ? 'bg-amber-500' : 'bg-emerald-500'
-                    }`}
-                    style={{ width: `${Math.min(activeModalEvent.detection.anomalyScore * 100, 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* HTTP Request Details */}
-              <div className="space-y-2">
-                <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px]">
-                  HTTP Request Spec
-                </h4>
-                <div className="grid grid-cols-2 gap-2 font-mono">
-                  <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-dark-800 border border-slate-200 dark:border-dark-700">
-                    <span className="text-[10px] text-slate-400 block">Method</span>
-                    <span className="font-bold text-slate-900 dark:text-white">{activeModalEvent.request.method}</span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-dark-800 border border-slate-200 dark:border-dark-700">
-                    <span className="text-[10px] text-slate-400 block">Status Code</span>
-                    <span className="font-bold text-slate-900 dark:text-white">{activeModalEvent.request.statusCode}</span>
-                  </div>
-                  <div className="col-span-2 p-2.5 rounded-lg bg-slate-50 dark:bg-dark-800 border border-slate-200 dark:border-dark-700">
-                    <span className="text-[10px] text-slate-400 block">Target Path & Query</span>
-                    <span className="font-bold text-slate-900 dark:text-white break-all">
-                      {activeModalEvent.request.path}{activeModalEvent.request.query}
-                    </span>
-                  </div>
-                  <div className="col-span-2 p-2.5 rounded-lg bg-slate-50 dark:bg-dark-800 border border-slate-200 dark:border-dark-700">
-                    <span className="text-[10px] text-slate-400 block">Client User-Agent</span>
-                    <span className="text-slate-700 dark:text-slate-300 break-all">{activeModalEvent.request.userAgent}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="pt-3 border-t border-slate-200 dark:border-dark-700 flex justify-between items-center">
-              <button
-                onClick={() => copyPayload(activeModalEvent)}
-                className="btn btn-secondary text-xs flex items-center gap-1.5"
-              >
-                <Copy size={13} />
-                Copy JSON
-              </button>
-              <button
-                onClick={() => setActiveModalEvent(null)}
-                className="btn btn-primary text-xs"
-              >
-                Close Inspector
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 export default LiveMonitoring;
+
