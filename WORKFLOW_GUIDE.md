@@ -916,3 +916,52 @@ class DetectionResult:
 ```
 
 ---
+
+## 🚀 Quick Reference
+
+### Start Services
+
+```bash
+# Windows one-click
+.\start.bat
+
+# Manual backend
+python -m api.waf_api
+
+# Manual frontend
+cd frontend && npm run dev
+```
+
+### Key Files to Modify
+
+| Task | File | Line |
+|------|------|------|
+| Change model | `model/transformer_model.py` | 66 |
+| Adjust threshold | `utils/config.py` | 45 |
+| Add API endpoint | `api/waf_api.py` | End of file |
+| Modify scoring | `inference/detector.py` | 250-280 |
+| Add attack type | `api/waf_api.py` | 465-495 |
+| Change rate limit | `api/waf_api.py` | 50-52 |
+| Customize UI | `frontend/src/pages/*.tsx` | Varies |
+
+### Important Concepts
+
+- **Anomaly Detection**: Model learns "normal" traffic, flags deviations
+- **Reconstruction Error**: How well model can reconstruct tokenized request
+- **Perplexity**: Language model confidence score
+- **Normalization**: Remove variable data to focus on structure
+- **MLM Training**: Masked Language Modeling (BERT-style)
+- **JIT Compilation**: PyTorch optimization for faster inference
+
+---
+
+## 📚 Additional Resources
+
+- **Architecture**: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- **Security**: [security/security_principles.md](./security/security_principles.md)
+- **API Docs**: http://localhost:8000/docs (when running)
+- **Training Guide**: [QUICKSTART.md](./QUICKSTART.md)
+- **Operations**: [OPERATIONS_GUIDE.md](./OPERATIONS_GUIDE.md)
+
+---
+
